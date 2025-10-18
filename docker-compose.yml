@@ -1,0 +1,81 @@
+version: '3.8'
+
+services:
+  # Serviço do Backend (FastAPI)
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    # MUDANÇA: O comando aqui deve espelhar o do Dockerfile para consistência.
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    volumes:
+      - type: bind
+        source: ./backend/app
+        target: /code/app
+      - type: bind
+        source: ${APPDATA}/gcloud
+        target: /root/.config/gcloud
+    ports:
+      - "8000:8000"
+    env_file:
+      - ./.env
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # Serviço do Banco de Dados (PostgreSQL)
+  db:
+    image: postgres:15-alpine # Imagem oficial e leve do Postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data/ # Persiste os dados do banco
+    env_file:
+      - ./.env # Carrega as variáveis de ambiente (usuário, senha, etc.)
+    ports:
+      - "5432:5432" # Expõe a porta do DB para sua máquina (para debug)
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Serviço da Fila/Cache (Redis)
+  redis:
+    image: redis:7-alpine # Imagem oficial e leve do Redis
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+# NOVO SERVIÇO: WORKER CELERY
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    # Comando para iniciar o worker Celery
+    command: celery -A app.celery_worker.celery_app worker -l info
+    volumes:
+      - ./backend/app:/code/app
+      - type: bind
+        source: ${APPDATA}/gcloud
+        target: /root/.config/gcloud
+    env_file:
+      - ./.env
+    depends_on:
+      - redis
+      - db
+
+  # ADMINER (INTERFACE GRÁFICA PARA O BANCO DE DADOS)
+  adminer:
+    image: adminer # Imagem oficial e leve do Adminer
+    restart: always
+    ports:
+      - "8080:8080" # Mapeia a porta do Adminer para a porta 8080 da sua máquina
+    depends_on:
+      - db # Garante que o Adminer só inicie depois do banco de dados
+
+# Define o volume nomeado para persistir os dados do PostgreSQL
+volumes:
+  postgres_data:

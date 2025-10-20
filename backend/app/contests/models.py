@@ -23,6 +23,10 @@ class PublishedContest(Base):
     # RELACIONAMENTO: Um concurso tem muitos cargos
     roles = relationship("ContestRole", back_populates="contest", cascade="all, delete-orphan")
 
+class ExamLevelType(str, enum.Enum):
+    MODULE = "MODULE"
+    SUBJECT = "SUBJECT"
+
 class ContestRole(Base):
     __tablename__ = "contest_roles"
 
@@ -34,36 +38,44 @@ class ContestRole(Base):
    
     # RELACIONAMENTOS
     contest = relationship("PublishedContest", back_populates="roles")
-    exam_composition = relationship("ExamComposition", back_populates="role", cascade="all, delete-orphan")
+    exam_structure = relationship("ExamStructure", back_populates="role", cascade="all, delete-orphan")
+    programmatic_content = relationship("ProgrammaticContent", back_populates="role", cascade="all, delete-orphan")
     programmatic_content = relationship("ProgrammaticContent", back_populates="role", cascade="all, delete-orphan")
     user_subscriptions = relationship("UserContest", back_populates="role")
 
 
-class ExamComposition(Base):
-    __tablename__ = "exam_composition"
+class ExamStructure(Base):
+    __tablename__ = "exam_structure"
 
     id = Column(Integer, primary_key=True, index=True)
-    subject_name = Column(String, index=True) 
+    level_name = Column(String, index=True, nullable=False) # Ex: "Conhecimentos Básicos" ou "Língua Portuguesa"
+    level_type = Column(SQLAlchemyEnum(ExamLevelType), nullable=False) # MODULE ou SUBJECT
     number_of_questions = Column(Integer, nullable=True)
     weight_per_question = Column(Float, nullable=True)
     
     # CHAVE ESTRANGEIRA: Link para a tabela de cargos
     contest_role_id = Column(Integer, ForeignKey("contest_roles.id"))
     
-    role = relationship("ContestRole", back_populates="exam_composition")
+    role = relationship("ContestRole", back_populates="exam_structure")
 
 class ProgrammaticContent(Base):
     __tablename__ = "programmatic_content"
 
     id = Column(Integer, primary_key=True, index=True)
-    subject_name = Column(String, index=True)
-    topic_group = Column(String, index=True)
-    topic_name = Column(String)
     
-    # CHAVE ESTRANGEIRA: Link para a tabela de cargos
+    # --- NOVAS COLUNAS HIERÁRQUICAS ---
+    exam_module = Column(String, index=True, nullable=False) # Ex: "Conhecimentos Básicos"
+    subject = Column(String, index=True, nullable=False)     # Ex: "Língua Portuguesa"
+    topic = Column(String, nullable=False)                    # Ex: "Crase"
+    
+    # CHAVE ESTRANGEIRA (permanece a mesma)
     contest_role_id = Column(Integer, ForeignKey("contest_roles.id"))
     
+    # RELACIONAMENTOS (permanecem os mesmos)
     role = relationship("ContestRole", back_populates="programmatic_content")
-    
-    # RELACIONAMENTO: Um tópico pode ter o progresso de vários usuários
-    user_progress = relationship("UserTopicProgress", back_populates="topic")
+    progress_entries = relationship("UserTopicProgress", back_populates="topic")
+    sessions = relationship(
+        "StudyRoadmapSession",
+        secondary="roadmap_session_topics",
+        back_populates="topics"
+    )

@@ -8,6 +8,8 @@ from app.users.models import User, UserContest, UserTopicProgress
 from app.contests.models import (
     PublishedContest,
     ContestRole,
-    ExamComposition,
+    ExamStructure,
     ProgrammaticContent
 )
+
+from app.study.models import StudyRoadmapSession

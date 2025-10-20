@@ -42,9 +42,34 @@ def submit_proficiency_assessment(
     db: Session = Depends(get_db)
 ):
     """
-    Recebe a autoavaliação do usuário por grupo de tópicos e atualiza
-    a proficiência para todos os tópicos individuais dentro de cada grupo.
+    Recebe a autoavaliação do usuário por MATÉRIA e replica (cascateia)
+    a proficiência para todos os tópicos individuais dentro de cada matéria.
     """
-    return services.update_user_proficiency_by_group(
+    return services.update_user_proficiency_by_subject( # <-- Chama a nova função
         db=db, user=current_user, user_contest_id=user_contest_id, submission=submission
     )
+
+@router.post("/user-contests/{user_contest_id}/generate-plan", response_model=schemas.PlanGenerationResponse)
+def generate_study_plan_endpoint(
+    user_contest_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Session = Depends(get_db)    
+):
+    """
+    Aciona a geração do roadmap de estudos personalizado pela IA.
+    Isso coleta todos os dados do usuário e do concurso, envia para a IA e
+    salva o plano de estudos priorizado no banco de dados.
+    """
+    return services.generate_study_plan(db=db, user=current_user, user_contest_id=user_contest_id)
+
+@router.get("/user-contests/{user_contest_id}/subjects", response_model=List[str])
+def get_subscription_subjects(
+    user_contest_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Session = Depends(get_db)
+):
+    """
+    Retorna a lista de matérias (Subjects) para uma inscrição de concurso.
+    O frontend usa isso para montar o formulário de autoavaliação.
+    """
+    return services.get_subjects_for_subscription(db=db, user=current_user, user_contest_id=user_contest_id)

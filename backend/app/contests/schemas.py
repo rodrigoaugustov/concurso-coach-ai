@@ -11,14 +11,16 @@ class ExamCompositionBase(BaseModel):
     weight_per_question: Optional[float] = None
 
 class ProgrammaticContentBase(BaseModel):
-    subject_name: str
-    topic_group: str
-    topic_name: str
+    exam_module: str
+    subject: str
+    topic: str
 
-# --- Schemas para resposta da API (com ID) ---
-
-class ExamComposition(ExamCompositionBase):
+class ExamStructure(BaseModel):
     id: int
+    level_name: str
+    level_type: str 
+    number_of_questions: Optional[int] = None
+    weight_per_question: Optional[float] = None
     class Config:
         from_attributes = True
 
@@ -30,7 +32,7 @@ class ProgrammaticContent(ProgrammaticContentBase):
 class ContestRole(BaseModel):
     id: int
     job_title: str
-    exam_composition: List[ExamComposition] = []
+    exam_composition: List[ExamStructure] = []
     programmatic_content: List[ProgrammaticContent] = []
     class Config:
         from_attributes = True

@@ -11,9 +11,13 @@ class UserContestSubscription(BaseModel):
         from_attributes = True
 
 class ProficiencyUpdate(BaseModel):
-    topic_group: str
-    # A pontuação vai de 0.0 (iniciante) a 1.0 (avançado)
+    subject: str # <-- MUDANÇA: Agora a chave é o 'subject'
     score: float = Field(ge=0.0, le=1.0) 
 
 class ProficiencySubmission(BaseModel):
     proficiencies: List[ProficiencyUpdate]
+
+class PlanGenerationResponse(BaseModel):
+    status: str
+    message: str
+    roadmap_items_created: int

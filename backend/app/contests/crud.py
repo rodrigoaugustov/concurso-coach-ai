@@ -47,20 +47,21 @@ def save_structured_edict_data(db: Session, contest_id: int, data: dict):
         db.add(new_role)
 
         for comp_data in role_data.get("exam_composition", []):
-            new_comp = models.ExamComposition(
-                subject_name=comp_data.get("subject_name"),
+            new_structure_item = models.ExamStructure(
+                level_name=comp_data.get("level_name"),
+                level_type=comp_data.get("level_type"),
                 number_of_questions=comp_data.get("number_of_questions"),
                 weight_per_question=comp_data.get("weight_per_question"),
                 role=new_role
             )
-            db.add(new_comp)
+            db.add(new_structure_item)
 
         for content_data in role_data.get("programmatic_content", []):
             new_content = models.ProgrammaticContent(
-                subject_name=content_data.get("subject_name"),
-                topic_group=content_data.get("topic_group"),
-                topic_name=content_data.get("topic_name"),
-                role=new_role
+                exam_module=content_data.get("exam_module"),
+            subject=content_data.get("subject"),
+            topic=content_data.get("topic"),
+            role=new_role
             )
             db.add(new_content)
             

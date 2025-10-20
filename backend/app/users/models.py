@@ -26,6 +26,7 @@ class UserContest(Base):
     user = relationship("User", back_populates="contests")
     role = relationship("ContestRole", back_populates="user_subscriptions")
     topic_progress = relationship("UserTopicProgress", back_populates="user_contest", cascade="all, delete-orphan")
+    roadmap_sessions = relationship("StudyRoadmapSession", back_populates="user_contest", cascade="all, delete-orphan")
 
 class AssessmentType(str, enum.Enum):
     SELF_ASSESSMENT = "SELF_ASSESSMENT"
@@ -37,6 +38,9 @@ class UserTopicProgress(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     current_proficiency_score = Column(Float, default=0.0)
+    sessions_studied = Column(Integer, nullable=False, default=0)
+    last_studied_at = Column(DateTime, nullable=True)
+    next_review_at = Column(DateTime, nullable=True, index=True)
     
     # CHAVES ESTRANGEIRAS
     user_contest_id = Column(Integer, ForeignKey("user_contests.id"))
@@ -44,7 +48,7 @@ class UserTopicProgress(Base):
     
     # RELACIONAMENTOS
     user_contest = relationship("UserContest", back_populates="topic_progress")
-    topic = relationship("ProgrammaticContent", back_populates="user_progress")
+    topic = relationship("ProgrammaticContent", back_populates="progress_entries")
     history = relationship("ProficiencyHistory", back_populates="topic_progress", cascade="all, delete-orphan")
 
 class ProficiencyHistory(Base):

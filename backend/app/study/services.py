@@ -1,10 +1,17 @@
 # Em backend/app/study/services.py
-from sqlalchemy.orm import Session
+import json
+from datetime import date
+from sqlalchemy.orm import Session, joinedload
 from fastapi import HTTPException, status
+from app.core import ai_service
 from app.users.models import User, UserContest, UserTopicProgress
-from app.contests.models import ContestRole, ProgrammaticContent
+from app.contests.models import ContestRole, ProgrammaticContent, ExamStructure
 from .schemas import ProficiencySubmission
 from app.users.models import AssessmentType, ProficiencyHistory
+from .models import StudyRoadmapSession
+from .ai_schemas import AITopicAnalysisResponse, AIStudyPlanResponse
+from .prompts import topic_analysis_prompt, plan_organization_prompt
+from .plan_generator import StudyPlanGenerator
 
 def subscribe_user_to_role(db: Session, user: User, role_id: int):
     # Verifica se o cargo existe
@@ -45,36 +52,33 @@ def get_topic_groups_for_subscription(db: Session, user: User, user_contest_id: 
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Subscription not found")
 
     # Query para buscar os nomes distintos dos grupos de tópicos
-    topic_groups = db.query(ProgrammaticContent.topic_group).filter(
+    topic_groups = db.query(ProgrammaticContent.topic).filter(
         ProgrammaticContent.contest_role_id == user_contest.contest_role_id
     ).distinct().all()
 
     # Converte o resultado (uma lista de tuplas) para uma lista de strings
     return [group[0] for group in topic_groups]
 
-def update_user_proficiency_by_group(db: Session, user: User, user_contest_id: int, submission: ProficiencySubmission):
+def update_user_proficiency_by_subject(db: Session, user: User, user_contest_id: int, submission: ProficiencySubmission):
     user_contest = db.query(UserContest).filter(UserContest.id == user_contest_id, UserContest.user_id == user.id).first()
     if not user_contest:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Subscription not found")
 
-    # Itera sobre cada grupo e nota enviados pelo usuário
+    # Itera sobre cada matéria e nota enviada pelo usuário
     for proficiency_update in submission.proficiencies:
-        group_name = proficiency_update.topic_group
+        subject_name = proficiency_update.subject
         new_score = proficiency_update.score
 
-        # Encontra todos os registros de UserTopicProgress para este usuário e grupo de tópicos
-        progress_records = db.query(UserTopicProgress).join(UserTopicProgress.topic).filter(
+        # Encontra todos os registros de UserTopicProgress cuja matéria (subject) corresponde
+        progress_records_to_update = db.query(UserTopicProgress).join(UserTopicProgress.topic).filter(
             UserTopicProgress.user_contest_id == user_contest_id,
-            ProgrammaticContent.topic_group == group_name
+            ProgrammaticContent.subject == subject_name
         ).all()
 
-        # Para cada tópico dentro do grupo, atualiza o score e cria um registro de histórico
-        for progress in progress_records:
-            # Na auto-avaliação, o novo score simplesmente substitui o antigo.
-            # (A lógica ponderada será usada para quizzes no futuro)
+        # Para cada tópico dentro da matéria, atualiza o score e cria um registro de histórico
+        for progress in progress_records_to_update:
             progress.current_proficiency_score = new_score
             
-            # Cria o registro no histórico
             history_record = ProficiencyHistory(
                 topic_progress=progress,
                 score=new_score,
@@ -84,3 +88,30 @@ def update_user_proficiency_by_group(db: Session, user: User, user_contest_id: i
     
     db.commit()
     return {"status": "success", "message": "Proficiency updated and history recorded."}
+
+def generate_study_plan(db: Session, user: User, user_contest_id: int):
+    user_contest = db.query(UserContest).filter(
+        UserContest.id == user_contest_id, UserContest.user_id == user.id
+    ).first()
+
+    if not user_contest:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Subscription not found")
+
+    # Instancia e executa o gerador
+    generator = StudyPlanGenerator(db=db, user_contest=user_contest)
+    result = generator.generate()
+    
+    return result
+
+def get_subjects_for_subscription(db: Session, user: User, user_contest_id: int):
+    user_contest = db.query(UserContest).filter(UserContest.id == user_contest_id, UserContest.user_id == user.id).first()
+    if not user_contest:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Subscription not found")
+
+    # Query para buscar os nomes distintos dos subjects
+    subjects = db.query(ProgrammaticContent.subject).filter(
+        ProgrammaticContent.contest_role_id == user_contest.contest_role_id
+    ).distinct().all()
+
+    # Converte a lista de tuplas para uma lista de strings
+    return [subject[0] for subject in subjects]

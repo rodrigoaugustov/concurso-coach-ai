@@ -58,8 +58,10 @@ def upload_contest_edict(
             file_hash=file_hash
         )
 
+        print("Concurso criado com ID:", db_contest.id)
         # 4. DISPARAR A TAREFA ASSÍNCRONA
         process_edict_task.delay(db_contest.id)
+        print("Tarefa de processamento disparada para o concurso ID:", db_contest.id)
 
         return db_contest
 

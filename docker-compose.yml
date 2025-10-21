@@ -94,6 +94,27 @@ services:
       - redis
       - worker
 
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    # Em desenvolvimento, sobrescrevemos o CMD do Dockerfile para usar o servidor de dev
+    command: npm run dev
+    volumes:
+      # Mapeia todo o código do frontend para o container para o hot-reload funcionar
+      - ./frontend:/app
+      # Evita que o node_modules local sobrescreva o do container
+      - /app/node_modules
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend # Garante que o frontend só inicie depois do backend
+    # Passa a URL da API como variável de ambiente para o Next.js
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1
+      - CHOKIDAR_USEPOLLING=true
+
+
 # Define o volume nomeado para persistir os dados do PostgreSQL
 volumes:
   postgres_data:

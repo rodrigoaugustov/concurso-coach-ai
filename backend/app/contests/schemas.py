@@ -50,3 +50,16 @@ class Contest(BaseModel):
     
     class Config:
         from_attributes = True
+
+class ContestBase(BaseModel):
+    name: str
+    class Config:
+        from_attributes = True
+
+# Schema para o cargo, que inclui o concurso aninhado
+class ContestRoleForSubscription(BaseModel):
+    id: int
+    job_title: str
+    contest: ContestBase
+    class Config:
+        from_attributes = True

@@ -6,6 +6,7 @@ from app.core.database import get_db
 from app.users.auth import get_current_user
 from app.users.models import User
 from . import services, schemas
+from .ui_schemas import ProceduralLayout
 
 router = APIRouter()
 
@@ -73,3 +74,65 @@ def get_subscription_subjects(
     O frontend usa isso para montar o formulário de autoavaliação.
     """
     return services.get_subjects_for_subscription(db=db, user=current_user, user_contest_id=user_contest_id)
+
+@router.get("/user-contests/{user_contest_id}/next-session", response_model=schemas.NextStudySessionResponse)
+def get_next_study_session(
+    user_contest_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Session = Depends(get_db)
+):
+    """
+    Retorna a próxima Sessão de Foco para o usuário, que consiste em:
+    1. A sessão principal de estudo, baseada no roadmap da IA.
+    2. Um tópico opcional para revisão rápida, baseado na repetição espaçada.
+    """
+    return services.get_next_session_for_user(db=db, user=current_user, user_contest_id=user_contest_id)
+
+@router.post("/user-contests/{user_contest_id}/complete-session")
+def complete_session(
+    user_contest_id: int,
+    completion_data: schemas.SessionCompletionRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Session = Depends(get_db)
+):
+    """
+    Marca uma sessão de estudo como concluída.
+    Isso atualiza o progresso do usuário e agenda a próxima revisão
+    para os tópicos estudados, com base na repetição espaçada.
+    """
+    return services.complete_study_session(
+        db=db, user=current_user, user_contest_id=user_contest_id, completion_data=completion_data
+    )
+
+@router.post("/generate-layout", response_model=ProceduralLayout)
+def generate_layout_endpoint(
+    request: schemas.LayoutGenerationRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Session = Depends(get_db),
+):
+    """
+    Gera um layout de UI procedural e dinâmico para uma Sessão de Foco.
+    A resposta é uma árvore de componentes JSON para o frontend renderizar.
+    """
+    return services.generate_procedural_layout(db=db, request=request)
+
+@router.get("/user-contests/", response_model=List[schemas.UserContestSubscription]) 
+def get_all_user_subscriptions_endpoint(
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Session = Depends(get_db),
+):
+    """Retorna todas as inscrições de concurso para o usuário logado."""
+    return services.get_all_user_subscriptions(db=db, user=current_user)
+
+@router.post("/sessions/{session_id}/generate-layout", response_model=ProceduralLayout)
+def get_or_generate_layout_endpoint(
+    session_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Session = Depends(get_db)
+):
+    """
+    Obtém o layout da aula para uma sessão.
+    Se o layout ainda não foi gerado, ele aciona a IA para criá-lo,
+    salva o resultado, e o retorna. Se já existe, retorna do cache do banco.
+    """
+    return services.get_or_generate_layout(db=db, user=current_user, session_id=session_id)

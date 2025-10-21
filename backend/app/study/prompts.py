@@ -62,3 +62,33 @@ Sua tarefa anterior resultou em um erro porque a sua resposta não foi um objeto
 # SUA TAREFA
 Por favor, corrija a sua resposta anterior. Você DEVE retornar SOMENTE o objeto JSON corrigido, sem nenhum outro texto ou explicação, e garantindo que ele corresponda perfeitamente ao schema solicitado na mensagem anterior.
 """
+
+procedural_layout_prompt = """
+# MISSÃO
+Você é um designer instrucional... Sua missão é criar uma experiência de aprendizado...
+
+# CONTEÚDO A SER ABORDADO
+- {topics_list_str}
+
+# SUA TAREFA
+Projete a melhor sequência didática...
+Sua resposta DEVE ser um objeto JSON com uma chave "layout".
+"layout" é uma LISTA de objetos "LayoutItem".
+
+Para CADA item na lista "layout", você deve:
+1.  Definir o campo 'component_type' com o nome do componente que você está usando (ex: "TextBlock", "FlipCard", "Carousel", "Quiz").
+2.  Preencher o campo correspondente a esse tipo (ex: 'text_block', 'flip_card', etc.) com os dados do componente.
+3.  DEIXAR TODOS OS OUTROS campos de componente como nulos (null).
+
+EXEMPLO DE UM 'LayoutItem' para um TextBlock:
+{{
+  "component_type": "TextBlock",
+  "text_block": {{ "content_md": "Bem-vindo à sua Sessão de Foco!" }},
+  "flip_card": null,
+  "carousel": null,
+  "quiz": null
+}}
+
+Comece com um 'TextBlock' de introdução e termine com um 'Quiz'. Varie os componentes no meio.
+"""
+

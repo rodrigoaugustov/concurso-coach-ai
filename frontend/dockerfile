@@ -1,0 +1,36 @@
+# Usa a imagem oficial do Node.js
+FROM node:20-alpine AS base
+
+# Define o diretório de trabalho
+WORKDIR /app
+
+# Copia os arquivos de definição de pacotes
+COPY package*.json ./
+
+# --- Dependências ---
+FROM base AS deps
+# Instala as dependências
+RUN npm install
+
+# --- Build ---
+FROM base AS builder
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+# Comando para construir a aplicação para produção
+RUN npm run build
+
+# --- Runner ---
+FROM base AS runner
+WORKDIR /app
+
+# Copia os arquivos construídos do estágio 'builder'
+COPY --from=builder /app/public ./public
+COPY --from=builder /app/.next ./.next
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/package.json ./package.json
+
+# Expõe a porta que o Next.js roda
+EXPOSE 3000
+
+# Comando para iniciar o servidor Next.js
+CMD ["npm", "start"]

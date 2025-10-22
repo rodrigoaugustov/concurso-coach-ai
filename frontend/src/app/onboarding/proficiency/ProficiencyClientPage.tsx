@@ -165,14 +165,6 @@ export default function ProficiencyClientPage({ initialId }: Props) {
     }
   };
 
-  // Debounce 600ms + janela anti-burst 350ms
-  const handleSubmit = useDebouncedSubmit(async (e: React.FormEvent) => {
-    const now = Date.now();
-    if (now - lastClickRef.current < 350) return;
-    lastClickRef.current = now;
-    await submitCore(e);
-  }, 600);
-
   if (isLoading) {
     return (
         <div className='flex items-center justify-center min-h-screen'>
@@ -212,7 +204,7 @@ export default function ProficiencyClientPage({ initialId }: Props) {
                 <p className='text-lg font-semibold animate-pulse text-brand'>{statusMessage}</p>
             </div>
         ) : (
-            <form onSubmit={handleSubmit}>
+            <form onSubmit={submitCore}>
                 <div className='space-y-6'>
                     {subjects.map(subject => (
                         <div key={subject} className='py-4 border-t border-border first:border-t-0'>

@@ -1,7 +1,7 @@
 'use client';
 
 // CORREÇÃO: 'useEffect' foi removido da importação, pois não é mais usado aqui.
-import { useMemo, useState } from 'react'; 
+import { useMemo, useRef, useState } from 'react'; 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import OnboardingFlow from '@/components/OnboardingFlow';
@@ -12,6 +12,22 @@ import { useDashboardData } from '@/hooks/useDashboardData';
 import { Select } from '@/components/ui/Select';
 import UserMenu from '@/components/UserMenu';
 import { ChevronDownIcon } from '@heroicons/react/20/solid';
+
+// Utilitário simples de debounce por referência, evita re-render desnecessário
+function useDebouncedCallback<T extends (...args: any[]) => void>(
+  callback: T,
+  delayMs: number
+) {
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  return (...args: Parameters<T>) => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+    }
+    timerRef.current = setTimeout(() => {
+      callback(...args);
+    }, delayMs);
+  };
+}
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -37,10 +53,15 @@ export default function DashboardPage() {
     return pendingSelfAssessments.filter(p => p.id === activeSubscriptionId);
   }, [pendingSelfAssessments, activeSubscriptionId]);
 
-  const handleGeneratePlan = async () => {
+  // Guarda o último instante em que foi permitido clicar, para garantir lock adicional
+  const lastClickRef = useRef<number>(0);
+
+  const generatePlanCore = async () => {
     if (!activeSubscriptionId) return;
-    
+    // Lock adicional contra cliques quase simultâneos
+    if (isGeneratingPlan) return;
     setIsGeneratingPlan(true);
+
     const token = localStorage.getItem('accessToken');
     const apiUrl = process.env.NEXT_PUBLIC_API_URL;
 
@@ -49,20 +70,27 @@ export default function DashboardPage() {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` },
       });
-      if (!response.ok) throw new Error("A IA falhou em gerar o plano. Tente novamente mais tarde.");
+      if (!response.ok) throw new Error('A IA falhou em gerar o plano. Tente novamente mais tarde.');
       
       if (token) {
-        // Força a recarga dos dados da próxima sessão após o plano ser gerado
         await fetchNextSession(activeSubscriptionId, token);
       }
-
     } catch (err) {
       console.error(err);
-      // TODO: Mostrar um erro para o usuário com um toast/alert
     } finally {
       setIsGeneratingPlan(false);
     }
   };
+
+  // Debounce de 600ms no clique do botão
+  const handleGeneratePlan = useDebouncedCallback(() => {
+    const now = Date.now();
+    // Pequena janela anti-burst adicional: ignora cliques com menos de 350ms
+    if (now - lastClickRef.current < 350) return;
+    lastClickRef.current = now;
+    if (isGeneratingPlan) return; // mantém o lock existente
+    void generatePlanCore();
+  }, 600);
   
   const renderContent = () => {
     if (subscriptions.length === 0) {

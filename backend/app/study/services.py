@@ -90,8 +90,8 @@ def get_pending_self_assessments(db: Session, user: User):
     """
     # Subquery para user_contest_ids que já têm SELF_ASSESSMENT
     assessed_user_contest_ids = (
-        db.query(ProficiencyHistory.topic_progress_id)
-        .join(UserTopicProgress, ProficiencyHistory.topic_progress_id == UserTopicProgress.id)
+        db.query(ProficiencyHistory.user_topic_progress_id)
+        .join(UserTopicProgress, ProficiencyHistory.user_topic_progress_id == UserTopicProgress.id)
         .filter(
             UserTopicProgress.user_contest_id.in_(
                 db.query(UserContest.id).filter(UserContest.user_id == user.id)
@@ -137,7 +137,7 @@ def update_user_proficiency_by_subject(db: Session, user: User, user_contest_id:
     # VALIDAÇÃO: Verificar se já existe SELF_ASSESSMENT para esta inscrição
     existing_self_assessment = (
         db.query(ProficiencyHistory)
-        .join(UserTopicProgress, ProficiencyHistory.topic_progress_id == UserTopicProgress.id)
+        .join(UserTopicProgress, ProficiencyHistory.user_topic_progress_id == UserTopicProgress.id)
         .filter(
             UserTopicProgress.user_contest_id == user_contest_id,
             ProficiencyHistory.assessment_type == AssessmentType.SELF_ASSESSMENT

@@ -6,9 +6,9 @@ import { Select } from '@/components/ui/Select';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/Button';
 
-// Tipos simplificados conforme API /study/available-roles
+// Tipos conforme API /study/available-roles (tornando contest opcional para robustez)
 interface ContestBase { id: number; name: string }
-interface ContestRole { id: number; job_title: string; contest: ContestBase }
+interface ContestRole { id: number; job_title: string; contest?: ContestBase }
 
 export default function OnboardingFlow() {
     const [roles, setRoles] = useState<ContestRole[]>([]);
@@ -25,8 +25,12 @@ export default function OnboardingFlow() {
                     headers: { 'Authorization': `Bearer ${token}` },
                 });
                 if (!res.ok) throw new Error('Falha ao buscar cargos disponíveis para inscrição.');
-                const data: ContestRole[] = await res.json();
-                setRoles(data);
+                const raw = await res.json();
+                // Normaliza/filtra itens inválidos (sem contest)
+                const normalized: ContestRole[] = Array.isArray(raw)
+                  ? raw.filter((r: any) => r && r.contest && typeof r.contest.id === 'number' && typeof r.contest.name === 'string')
+                  : [];
+                setRoles(normalized);
             } catch (e) {
                 setError(e instanceof Error ? e.message : 'Erro ao carregar cargos disponíveis.');
             } finally {
@@ -40,13 +44,20 @@ export default function OnboardingFlow() {
 
     const contests = useMemo(() => {
         const map = new Map<number, string>();
-        roles.forEach(r => { map.set(r.contest.id, r.contest.name); });
+        roles.forEach(r => {
+            const cid = r?.contest?.id;
+            const cname = r?.contest?.name;
+            if (typeof cid === 'number' && typeof cname === 'string') {
+                map.set(cid, cname);
+            }
+        });
         return Array.from(map.entries()).map(([id, name]) => ({ id, name }));
     }, [roles]);
 
     const filteredRoles = useMemo(() => {
         if (!selectedContestId) return [] as ContestRole[];
-        return roles.filter(r => r.contest.id === Number(selectedContestId));
+        const sel = Number(selectedContestId);
+        return roles.filter(r => r?.contest?.id === sel);
     }, [roles, selectedContestId]);
 
     const handleSubscribe = async (roleId: number) => {
@@ -62,7 +73,6 @@ export default function OnboardingFlow() {
             });
 
             if (response.status === 409) {
-                // Tratamento UX específico de duplicidade
                 setError('Você já está inscrito neste cargo. Acesse suas inscrições no painel principal.');
                 return;
             }

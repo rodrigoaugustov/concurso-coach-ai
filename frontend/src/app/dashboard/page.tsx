@@ -1,7 +1,7 @@
 'use client';
 
 // CORREÇÃO: 'useEffect' foi removido da importação, pois não é mais usado aqui.
-import { useState } from 'react'; 
+import { useMemo, useState } from 'react'; 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import OnboardingFlow from '@/components/OnboardingFlow';
@@ -30,6 +30,12 @@ export default function DashboardPage() {
   
   const [isGeneratingPlan, setIsGeneratingPlan] = useState(false);
   const [showPlanSelect, setShowPlanSelect] = useState(false);
+
+  // Mostra CTA apenas se a inscrição ATIVA estiver na lista de pendentes
+  const activePendingAssessments = useMemo(() => {
+    if (!activeSubscriptionId) return [] as typeof pendingSelfAssessments;
+    return pendingSelfAssessments.filter(p => p.id === activeSubscriptionId);
+  }, [pendingSelfAssessments, activeSubscriptionId]);
 
   const handleGeneratePlan = async () => {
     if (!activeSubscriptionId) return;
@@ -65,9 +71,9 @@ export default function DashboardPage() {
     if (activeSubscriptionId) {
       return (
         <>
-          {/* CTA para autoavaliações pendentes - sempre no topo quando existir */}
+          {/* CTA para autoavaliação pendente SOMENTE da inscrição ativa */}
           <PendingSelfAssessmentCTA 
-            pendingAssessments={pendingSelfAssessments} 
+            pendingAssessments={activePendingAssessments} 
             className="mb-6"
           />
           
@@ -82,7 +88,7 @@ export default function DashboardPage() {
     }
     return (
       <>
-        {/* CTA para autoavaliações pendentes - mesmo sem plano ativo selecionado */}
+        {/* Quando nenhuma inscrição ativa estiver selecionada, mantém a lista completa */}
         <PendingSelfAssessmentCTA 
           pendingAssessments={pendingSelfAssessments} 
           className="mb-6"

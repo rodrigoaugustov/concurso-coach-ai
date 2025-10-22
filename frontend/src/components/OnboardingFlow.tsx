@@ -16,6 +16,8 @@ export default function OnboardingFlow() {
     const [error, setError] = useState('');
     const [selectedContestId, setSelectedContestId] = useState<number | ''>('');
 
+    const router = useRouter();
+
     useEffect(() => {
         const fetchAvailableRoles = async () => {
             try {
@@ -40,7 +42,16 @@ export default function OnboardingFlow() {
         fetchAvailableRoles();
     }, []);
 
-    const router = useRouter();
+    // Auto-seleciona concurso se houver apenas um
+    useEffect(() => {
+        if (!selectedContestId && roles.length > 0) {
+            // Agrupa contests válidos
+            const uniqueContestIds = Array.from(new Set(roles.map(r => r.contest?.id).filter(Boolean)));
+            if (uniqueContestIds.length === 1) {
+                setSelectedContestId(uniqueContestIds[0] as number);
+            }
+        }
+    }, [roles, selectedContestId]);
 
     const contests = useMemo(() => {
         const map = new Map<number, string>();
@@ -93,7 +104,19 @@ export default function OnboardingFlow() {
 
     if (isLoading) return <p>Carregando cargos disponíveis...</p>;
     if (error) return <p className="text-red-600">{error}</p>;
-    if (roles.length === 0) return <p>Não há cargos disponíveis para nova inscrição no momento.</p>;
+    if (roles.length === 0) {
+        return (
+            <div className="text-center space-y-4">
+                <p>Não há cargos disponíveis para nova inscrição no momento.</p>
+                <button
+                    className="px-4 py-2 rounded bg-indigo-600 text-white hover:bg-indigo-700"
+                    onClick={() => router.push('/dashboard')}
+                >
+                    Voltar para o painel
+                </button>
+            </div>
+        );
+    }
 
     return (
         <div className="bg-surface p-8 rounded-xl shadow-md space-y-8 max-w-2xl mx-auto">

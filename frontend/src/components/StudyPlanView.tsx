@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { Button } from './ui/Button';
-import type { NextSessionResponse, StudyRoadmapSession } from '@/types/study-types';
+import type { NextSessionResponse } from '@/types/study-types';
 
 interface StudyPlanViewProps {
   onGeneratePlan: () => void;
@@ -47,7 +47,7 @@ export default function StudyPlanView({ onGeneratePlan, isGeneratingPlan, nextSe
             <div className="text-center p-4 bg-indigo-50 rounded-lg shadow-sm">
                 <h2 className="text-md font-medium text-indigo-700">Sua Próxima Sessão de Foco</h2>
                 <p className="mt-1 text-4xl font-extrabold tracking-tight text-indigo-900">
-                    Sessão #{main_session.session_number + 1}
+                    Sessão #{main_session.session_number}
                 </p>
             </div>
 

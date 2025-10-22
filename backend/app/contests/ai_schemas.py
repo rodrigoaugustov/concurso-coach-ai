@@ -20,7 +20,7 @@ class AIContestRole(BaseModel):
     programmatic_content: List[AIProgrammaticContent] = Field(description="A lista completa de tópicos organizados hierarquicamente.")
 
 class EdictExtractionResponse(BaseModel):
-    contest_name: str = Field(description="O nome oficial e completo do concurso público.")
+    contest_name: str = Field(description="Nome amigável e sucinto do concurso público, Ex.: Concurso INSS 2025.")
     examining_board: str = Field(description="O nome da banca examinadora responsável pela aplicação da prova do concurso. Ex.: FGV, CESPE, FCC.")
     exam_date: date = Field(description="A data provável da prova objetiva, no formato AAAA-MM-DD. Caso não tenha essa informação, deixe como null.")
     contest_roles: List[AIContestRole] = Field(description="Lista de cargos oferecidos no concurso, com suas respectivas composições de prova e conteúdos programáticos.")

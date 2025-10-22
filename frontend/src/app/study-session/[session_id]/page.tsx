@@ -140,8 +140,7 @@ export default function StudySessionPage() {
             <div className="max-w-4xl mx-auto py-16 px-4 sm:px-6 lg:px-8">
                 <div className="text-center mb-16">
                     <h1 className="text-4xl sm:text-5xl font-extrabold tracking-tight text-gray-900">
-                        Sessão de Foco {layout.session_number !== undefined ? `#${layout.session_number + 1}` : ''}
-                        {layout.title && `: ${layout.title}`}
+                        Sessão de Foco {sessionId !== undefined ? `#${sessionId}` : ''}
                     </h1>
                     <p className="mt-4 text-lg text-gray-700">
                         Concentre-se no conteúdo abaixo para maximizar seu aprendizado.

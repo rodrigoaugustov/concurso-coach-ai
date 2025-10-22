@@ -1,16 +1,52 @@
 # Em backend/app/study/router.py
 from typing import Annotated, List
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.users.auth import get_current_user
 from app.users.models import User
+from app.contests.schemas import ContestRole
 from . import services, schemas
 from .ui_schemas import ProceduralLayout
 
 router = APIRouter()
 
-@router.post("/subscribe/{role_id}", response_model=schemas.UserContestSubscription)
+# === NOVOS ENDPOINTS PARA CORRIGIR BUG DE INSCRIÇÃO DUPLICADA ===
+
+@router.get("/available-roles", response_model=List[ContestRole], summary="Get available roles for enrollment")
+def get_available_roles(
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Session = Depends(get_db)
+):
+    """
+    Retorna uma lista de cargos disponíveis para inscrição,
+    excluindo aqueles em que o usuário já está inscrito.
+    
+    Ideal para o fluxo de onboarding, evitando re-inscrições acidentais.
+    """
+    return services.get_available_roles_for_user(db=db, user=current_user)
+
+@router.get("/subscriptions", response_model=List[schemas.UserContestSubscription], summary="Get user subscriptions")
+def get_user_subscriptions(
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Session = Depends(get_db)
+):
+    """
+    Retorna todas as inscrições ativas do usuário logado.
+    Alias conveniente para o endpoint /user-contests/.
+    """
+    return services.get_all_user_subscriptions(db=db, user=current_user)
+
+# === ENDPOINTS EXISTENTES ATUALIZADOS ===
+
+@router.post("/subscribe/{role_id}", 
+            response_model=schemas.UserContestSubscription, 
+            status_code=status.HTTP_201_CREATED,
+            summary="Subscribe to a contest role",
+            responses={
+                409: {"description": "User already enrolled in this role"},
+                404: {"description": "Role not found"}
+            })
 def subscribe_to_contest_role(
     role_id: int,
     current_user: Annotated[User, Depends(get_current_user)],
@@ -18,7 +54,14 @@ def subscribe_to_contest_role(
 ):
     """
     Inscreve o usuário logado em um cargo específico de um concurso.
-    Isso cria o vínculo UserContest e inicializa o progresso em todos os tópicos.
+    
+    **Validações:**
+    - Verifica se o cargo existe
+    - Impede inscrições duplicadas (retorna 409 Conflict)
+    - Inicializa o progresso em todos os tópicos do cargo
+    
+    **Retorna 409 Conflict se:**
+    - O usuário já está inscrito neste cargo
     """
     user_contest = services.subscribe_user_to_role(db=db, user=current_user, role_id=role_id)
     return user_contest

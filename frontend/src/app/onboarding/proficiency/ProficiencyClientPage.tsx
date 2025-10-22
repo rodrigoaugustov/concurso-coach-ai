@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/Button';
 import Link from 'next/link';
 
@@ -27,13 +27,13 @@ function useDebouncedSubmit<T extends (...args: any[]) => Promise<void> | void>(
   };
 }
 
-export default function ProficiencyClientPage() {
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const initialId = searchParams.get('user_contest_id');
+interface Props { initialId: string | null }
 
-  // Persistimos o ID localmente após a primeira leitura
-  const [storedContestId, setStoredContestId] = useState<string | null>(null);
+export default function ProficiencyClientPage({ initialId }: Props) {
+  const router = useRouter();
+
+  // Ref como fonte de verdade: não dispara re-render e não depende de hooks de URL
+  const userContestIdRef = useRef<string | null>(null);
 
   const [subjects, setSubjects] = useState<string[]>([]);
   const [proficiencies, setProficiencies] = useState<ProficiencyState>({});
@@ -44,29 +44,29 @@ export default function ProficiencyClientPage() {
   const [statusMessage, setStatusMessage] = useState('Carregando matérias...');
   const lastClickRef = useRef<number>(0);
 
-  // Na montagem, fixa a URL com o parâmetro e persiste o ID em estado local
-  useEffect(() => {
-    if (initialId) {
-      setStoredContestId(initialId);
-      // Estabiliza a URL mantendo o query param
-      router.replace(`/onboarding/proficiency?user_contest_id=${initialId}`, { scroll: false });
-    } else {
+  // Montagem: valida ID, fixa ref e estabiliza URL antes de qualquer render subsequente
+  useLayoutEffect(() => {
+    if (!initialId) {
       setError('ID da inscrição não encontrado. Por favor, comece o processo novamente.');
       setIsLoading(false);
+      return;
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    userContestIdRef.current = initialId;
+    // Estabiliza a URL mantendo o query param (sem scroll)
+    router.replace(`/onboarding/proficiency?user_contest_id=${initialId}`, { scroll: false });
+  }, [initialId, router]);
 
-  // Busca das matérias usa o ID persistido
+  // Busca das matérias usando o ID persistido em ref
   useEffect(() => {
-    if (!storedContestId) return;
+    const id = userContestIdRef.current;
+    if (!id) return;
 
     const fetchSubjects = async () => {
       try {
         const token = localStorage.getItem('accessToken');
         const apiUrl = process.env.NEXT_PUBLIC_API_URL;
 
-        const response = await fetch(`${apiUrl}/study/user-contests/${storedContestId}/subjects`, {
+        const response = await fetch(`${apiUrl}/study/user-contests/${id}/subjects`, {
           headers: { 'Authorization': `Bearer ${token}` },
         });
 
@@ -91,7 +91,7 @@ export default function ProficiencyClientPage() {
     };
 
     fetchSubjects();
-  }, [storedContestId]);
+  }, []);
 
   const handleProficiencyChange = (subject: string, value: number) => {
     setProficiencies(prev => ({ ...prev, [subject]: value }));
@@ -105,7 +105,8 @@ export default function ProficiencyClientPage() {
     setError('');
     setIsDuplicateSubmission(false);
 
-    if (!storedContestId) {
+    const id = userContestIdRef.current;
+    if (!id) {
       setError('ID da inscrição não encontrado.');
       setIsSubmitting(false);
       return;
@@ -126,7 +127,7 @@ export default function ProficiencyClientPage() {
               score,
           })),
       };
-      const proficiencyResponse = await fetch(`${apiUrl}/study/user-contests/${storedContestId}/proficiency`, {
+      const proficiencyResponse = await fetch(`${apiUrl}/study/user-contests/${id}/proficiency`, {
           method: 'POST',
           headers: headers,
           body: JSON.stringify(proficiencyPayload),
@@ -145,7 +146,7 @@ export default function ProficiencyClientPage() {
       }
       
       setStatusMessage('Gerando seu plano de estudos personalizado com a IA... (Isso pode levar até um minuto)');
-      const planResponse = await fetch(`${apiUrl}/study/user-contests/${storedContestId}/generate-plan`, {
+      const planResponse = await fetch(`${apiUrl}/study/user-contests/${id}/generate-plan`, {
           method: 'POST',
           headers: headers,
           timeout: 300000,
@@ -188,7 +189,6 @@ export default function ProficiencyClientPage() {
           <p className='mt-2 text-md text-secondary'>Seja honesto! Isso é crucial para criarmos o melhor plano para você.</p>
         </div>
         
-        {/* Exibe mensagem especial para duplicata */}
         {isDuplicateSubmission ? (
           <div className='text-center p-8 bg-amber-50 border border-amber-200 rounded-lg'>
             <div className='flex items-center justify-center mb-4'>

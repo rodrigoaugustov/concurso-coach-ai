@@ -30,7 +30,10 @@ function useDebouncedSubmit<T extends (...args: any[]) => Promise<void> | void>(
 export default function ProficiencyClientPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const userContestId = searchParams.get('user_contest_id');
+  const initialId = searchParams.get('user_contest_id');
+
+  // Persistimos o ID localmente após a primeira leitura
+  const [storedContestId, setStoredContestId] = useState<string | null>(null);
 
   const [subjects, setSubjects] = useState<string[]>([]);
   const [proficiencies, setProficiencies] = useState<ProficiencyState>({});
@@ -41,19 +44,29 @@ export default function ProficiencyClientPage() {
   const [statusMessage, setStatusMessage] = useState('Carregando matérias...');
   const lastClickRef = useRef<number>(0);
 
+  // Na montagem, fixa a URL com o parâmetro e persiste o ID em estado local
   useEffect(() => {
-    if (!userContestId) {
+    if (initialId) {
+      setStoredContestId(initialId);
+      // Estabiliza a URL mantendo o query param
+      router.replace(`/onboarding/proficiency?user_contest_id=${initialId}`, { scroll: false });
+    } else {
       setError('ID da inscrição não encontrado. Por favor, comece o processo novamente.');
       setIsLoading(false);
-      return;
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Busca das matérias usa o ID persistido
+  useEffect(() => {
+    if (!storedContestId) return;
 
     const fetchSubjects = async () => {
       try {
         const token = localStorage.getItem('accessToken');
         const apiUrl = process.env.NEXT_PUBLIC_API_URL;
 
-        const response = await fetch(`${apiUrl}/study/user-contests/${userContestId}/subjects`, {
+        const response = await fetch(`${apiUrl}/study/user-contests/${storedContestId}/subjects`, {
           headers: { 'Authorization': `Bearer ${token}` },
         });
 
@@ -78,7 +91,7 @@ export default function ProficiencyClientPage() {
     };
 
     fetchSubjects();
-  }, [userContestId]);
+  }, [storedContestId]);
 
   const handleProficiencyChange = (subject: string, value: number) => {
     setProficiencies(prev => ({ ...prev, [subject]: value }));
@@ -92,7 +105,7 @@ export default function ProficiencyClientPage() {
     setError('');
     setIsDuplicateSubmission(false);
 
-    if (!userContestId) {
+    if (!storedContestId) {
       setError('ID da inscrição não encontrado.');
       setIsSubmitting(false);
       return;
@@ -113,7 +126,7 @@ export default function ProficiencyClientPage() {
               score,
           })),
       };
-      const proficiencyResponse = await fetch(`${apiUrl}/study/user-contests/${userContestId}/proficiency`, {
+      const proficiencyResponse = await fetch(`${apiUrl}/study/user-contests/${storedContestId}/proficiency`, {
           method: 'POST',
           headers: headers,
           body: JSON.stringify(proficiencyPayload),
@@ -132,7 +145,7 @@ export default function ProficiencyClientPage() {
       }
       
       setStatusMessage('Gerando seu plano de estudos personalizado com a IA... (Isso pode levar até um minuto)');
-      const planResponse = await fetch(`${apiUrl}/study/user-contests/${userContestId}/generate-plan`, {
+      const planResponse = await fetch(`${apiUrl}/study/user-contests/${storedContestId}/generate-plan`, {
           method: 'POST',
           headers: headers,
           timeout: 300000,
@@ -180,7 +193,7 @@ export default function ProficiencyClientPage() {
           <div className='text-center p-8 bg-amber-50 border border-amber-200 rounded-lg'>
             <div className='flex items-center justify-center mb-4'>
               <svg className='h-8 w-8 text-amber-400' viewBox='0 0 20 20' fill='currentColor'>
-                <path fillRule='evenodd' d='M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z' clipRule='evenodd' />
+                <path fillRule='evenodd' d='M8.257 3.099c..' />
               </svg>
             </div>
             <h3 className='text-lg font-semibold text-amber-800 mb-2'>Autoavaliação Já Enviada</h3>

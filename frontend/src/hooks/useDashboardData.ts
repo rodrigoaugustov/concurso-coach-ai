@@ -10,6 +10,7 @@ export function useDashboardData() {
   // Estados de dados
   const [user, setUser] = useState<User | null>(null);
   const [subscriptions, setSubscriptions] = useState<UserSubscription[]>([]);
+  const [pendingSelfAssessments, setPendingSelfAssessments] = useState<UserSubscription[]>([]);
   const [activeSubscriptionId, setActiveSubscriptionId] = useState<number | null>(null);
   const [nextSession, setNextSession] = useState<NextSessionResponse | null>(null);
   
@@ -39,6 +40,27 @@ export function useDashboardData() {
       console.error("Erro em fetchNextSession:", err);
       // Mantemos o erro local, pois um erro aqui não é fatal para o dashboard inteiro
       setNextSession(null); 
+    }
+  }, []);
+
+  // Função para buscar pending self-assessments
+  const fetchPendingSelfAssessments = useCallback(async (token: string) => {
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+      const response = await fetch(`${apiUrl}/study/user-contests/pending-self-assessment`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setPendingSelfAssessments(data);
+      } else {
+        console.error("Falha ao buscar pending self-assessments");
+        setPendingSelfAssessments([]);
+      }
+    } catch (err) {
+      console.error("Erro ao buscar pending self-assessments:", err);
+      setPendingSelfAssessments([]);
     }
   }, []);
 
@@ -79,6 +101,8 @@ export function useDashboardData() {
               // Dispara a busca da próxima sessão para a inscrição recém-ativada
               fetchNextSession(firstSubId, token);
             }
+            // Busca pending self-assessments sempre
+            await fetchPendingSelfAssessments(token);
           }
         }
       } catch (err) {
@@ -97,7 +121,7 @@ export function useDashboardData() {
     fetchInitialData();
 
     return () => { isMounted = false; };
-  }, [router, activeSubscriptionId, fetchNextSession]); // O hook agora reage à mudança de inscrição
+  }, [router, activeSubscriptionId, fetchNextSession, fetchPendingSelfAssessments]); // O hook agora reage à mudança de inscrição
 
   // Função para mudar a inscrição ativa e buscar os dados da nova sessão
   const handleSetActiveSubscriptionId = (id: number) => {
@@ -110,13 +134,23 @@ export function useDashboardData() {
     }
   };
 
+  // Função para recarregar pending assessments (chamada após completar autoavaliação)
+  const refreshPendingAssessments = useCallback(() => {
+    const token = localStorage.getItem('accessToken');
+    if (token) {
+      fetchPendingSelfAssessments(token);
+    }
+  }, [fetchPendingSelfAssessments]);
+
   return { 
     user, 
     subscriptions, 
+    pendingSelfAssessments,
     activeSubscriptionId, 
     setActiveSubscriptionId: handleSetActiveSubscriptionId, // Expõe a função segura
     nextSession,
     fetchNextSession, // Expõe para recarregar manualmente se necessário
+    refreshPendingAssessments, // Nova função para recarregar pending assessments
     isLoading, 
     error 
   };

@@ -1,4 +1,3 @@
-# Em backend/app/study/router.py
 from typing import Annotated, List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -36,6 +35,17 @@ def get_user_subscriptions(
     Alias conveniente para o endpoint /user-contests/.
     """
     return services.get_all_user_subscriptions(db=db, user=current_user)
+
+@router.get("/user-contests/pending-self-assessment", response_model=List[schemas.UserContestSubscription], summary="Get subscriptions pending self-assessment")
+def get_pending_self_assessments(
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Session = Depends(get_db)
+):
+    """
+    Retorna inscrições do usuário que ainda não possuem SELF_ASSESSMENT.
+    Para o dashboard exibir CTA de "Preencher autoavaliação".
+    """
+    return services.get_pending_self_assessments(db=db, user=current_user)
 
 # === ENDPOINTS EXISTENTES ATUALIZADOS ===
 
@@ -78,7 +88,10 @@ def get_subscription_topic_groups(
     """
     return services.get_topic_groups_for_subscription(db=db, user=current_user, user_contest_id=user_contest_id)
 
-@router.post("/user-contests/{user_contest_id}/proficiency")
+@router.post("/user-contests/{user_contest_id}/proficiency",
+            responses={
+                409: {"description": "Self-assessment already submitted for this subscription"}
+            })
 def submit_proficiency_assessment(
     user_contest_id: int,
     submission: schemas.ProficiencySubmission,
@@ -88,8 +101,11 @@ def submit_proficiency_assessment(
     """
     Recebe a autoavaliação do usuário por MATÉRIA e replica (cascateia)
     a proficiência para todos os tópicos individuais dentro de cada matéria.
+    
+    **Retorna 409 Conflict se:**
+    - O usuário já enviou uma autoavaliação (SELF_ASSESSMENT) para esta inscrição
     """
-    return services.update_user_proficiency_by_subject( # <-- Chama a nova função
+    return services.update_user_proficiency_by_subject(
         db=db, user=current_user, user_contest_id=user_contest_id, submission=submission
     )
 

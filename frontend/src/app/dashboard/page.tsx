@@ -1,11 +1,12 @@
 'use client';
 
 // CORREÇÃO: 'useEffect' foi removido da importação, pois não é mais usado aqui.
-import { useState } from 'react'; 
+import { useMemo, useState } from 'react'; 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import OnboardingFlow from '@/components/OnboardingFlow';
 import StudyPlanManager from '@/components/StudyPlanManager';
+import PendingSelfAssessmentCTA from '@/components/PendingSelfAssessmentCTA';
 import { Button } from '@/components/ui/Button';
 import { useDashboardData } from '@/hooks/useDashboardData';
 import { Select } from '@/components/ui/Select';
@@ -18,6 +19,7 @@ export default function DashboardPage() {
   const { 
     user, 
     subscriptions, 
+    pendingSelfAssessments,
     isLoading, 
     error, 
     activeSubscriptionId, 
@@ -28,6 +30,12 @@ export default function DashboardPage() {
   
   const [isGeneratingPlan, setIsGeneratingPlan] = useState(false);
   const [showPlanSelect, setShowPlanSelect] = useState(false);
+
+  // Mostra CTA apenas se a inscrição ATIVA estiver na lista de pendentes
+  const activePendingAssessments = useMemo(() => {
+    if (!activeSubscriptionId) return [] as typeof pendingSelfAssessments;
+    return pendingSelfAssessments.filter(p => p.id === activeSubscriptionId);
+  }, [pendingSelfAssessments, activeSubscriptionId]);
 
   const handleGeneratePlan = async () => {
     if (!activeSubscriptionId) return;
@@ -61,16 +69,36 @@ export default function DashboardPage() {
       return <OnboardingFlow />;
     }
     if (activeSubscriptionId) {
+      const hasPendingForActive = activePendingAssessments.length > 0;
       return (
-        <StudyPlanManager 
-          nextSessionData={nextSession}
-          onGeneratePlan={handleGeneratePlan}
-          isGeneratingPlan={isGeneratingPlan}
-          isLoading={isLoading}
-        />
+        <>
+          {/* CTA para autoavaliação pendente SOMENTE da inscrição ativa */}
+          <PendingSelfAssessmentCTA 
+            pendingAssessments={activePendingAssessments} 
+            className="mb-6"
+          />
+          
+          <StudyPlanManager 
+            nextSessionData={nextSession}
+            onGeneratePlan={handleGeneratePlan}
+            isGeneratingPlan={isGeneratingPlan}
+            isLoading={isLoading}
+            hasPendingSelfAssessment={hasPendingForActive}
+          />
+        </>
       );
     }
-    return <p className="text-center text-gray-500 py-20">Selecione um plano de estudo para começar.</p>;
+    return (
+      <>
+        {/* Quando nenhuma inscrição ativa estiver selecionada, mantém a lista completa */}
+        <PendingSelfAssessmentCTA 
+          pendingAssessments={pendingSelfAssessments} 
+          className="mb-6"
+        />
+        
+        <p className="text-center text-gray-500 py-20">Selecione um plano de estudo para começar.</p>
+      </>
+    );
   };
   
   if (isLoading && !user) {

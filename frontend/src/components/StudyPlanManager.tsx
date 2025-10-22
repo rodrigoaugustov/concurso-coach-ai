@@ -5,19 +5,20 @@ import { Button } from './ui/Button';
 import type { NextSessionResponse } from '@/types/study-types';
 
 interface StudyPlanManagerProps {
-  // A prop 'userContestId' foi removida pois não era usada aqui.
-  // Ela é usada no DashboardPage para a chamada de 'generate-plan'.
   nextSessionData: NextSessionResponse | null;
   onGeneratePlan: () => void;
   isGeneratingPlan: boolean;
   isLoading: boolean;
+  // Novo: indica se a inscrição ativa tem autoavaliação pendente
+  hasPendingSelfAssessment?: boolean;
 }
 
 export default function StudyPlanManager({
   nextSessionData,
   onGeneratePlan,
   isGeneratingPlan,
-  isLoading
+  isLoading,
+  hasPendingSelfAssessment = false,
 }: StudyPlanManagerProps) {
     if (isLoading) {
         return (
@@ -38,6 +39,17 @@ export default function StudyPlanManager({
         );
     }
 
+    // Quando há pendência de autoavaliação para a inscrição ativa,
+    // NÃO exibir o call-to-action de gerar plano.
+    if (!nextSessionData && hasPendingSelfAssessment) {
+        return (
+            <div className="text-center p-8 bg-surface rounded-xl shadow-md">
+                <h2 className="text-2xl font-bold text-primary">Autoavaliação necessária</h2>
+                <p className="mt-2 text-secondary">Conclua a autoavaliação para liberarmos a geração do seu plano de estudos.</p>
+            </div>
+        );
+    }
+
     if (!nextSessionData) {
         return (
             <div className="text-center p-8 bg-surface rounded-xl shadow-md">
@@ -50,8 +62,6 @@ export default function StudyPlanManager({
         );
     }
     
-    // --- CORREÇÃO PRINCIPAL ---
-    // Agora estamos passando TODAS as props necessárias para o StudyPlanView.
     return <StudyPlanView 
               nextSessionData={nextSessionData} 
               onGeneratePlan={onGeneratePlan}

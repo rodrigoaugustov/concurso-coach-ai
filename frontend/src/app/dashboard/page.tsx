@@ -69,6 +69,7 @@ export default function DashboardPage() {
       return <OnboardingFlow />;
     }
     if (activeSubscriptionId) {
+      const hasPendingForActive = activePendingAssessments.length > 0;
       return (
         <>
           {/* CTA para autoavaliação pendente SOMENTE da inscrição ativa */}
@@ -82,6 +83,7 @@ export default function DashboardPage() {
             onGeneratePlan={handleGeneratePlan}
             isGeneratingPlan={isGeneratingPlan}
             isLoading={isLoading}
+            hasPendingSelfAssessment={hasPendingForActive}
           />
         </>
       );

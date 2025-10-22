@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
 from fastapi import HTTPException, status
 from app.users.models import User, UserContest, UserTopicProgress
-from app.contests.models import ContestRole, ProgrammaticContent
+from app.contests.models import ContestRole, ProgrammaticContent, PublishedContest, ContestStatus
 from app.core.settings import settings
 from app.core.ai_service import LangChainService
 from .schemas import ProficiencySubmission, SessionCompletionRequest, LayoutGenerationRequest
@@ -27,13 +27,18 @@ def subscribe_user_to_role(db: Session, user: User, role_id: int):
     if not role:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Role not found")
 
-    # Verifica se o usuário já está inscrito
+    # VALIDAÇÃO: Verifica se o usuário já está inscrito neste cargo
     existing_subscription = db.query(UserContest).filter(
         UserContest.user_id == user.id,
         UserContest.contest_role_id == role_id
     ).first()
+    
     if existing_subscription:
-        return existing_subscription # Retorna a inscrição existente
+        # Retorna erro 409 Conflict se já estiver inscrito
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, 
+            detail=f"Usuário já está inscrito no cargo '{role.job_title}' deste concurso."
+        )
 
     # Cria a nova inscrição (UserContest)
     new_user_contest = UserContest(user_id=user.id, contest_role_id=role_id)
@@ -52,6 +57,42 @@ def subscribe_user_to_role(db: Session, user: User, role_id: int):
     db.commit()
     db.refresh(new_user_contest)
     return new_user_contest
+
+def get_available_roles_for_user(db: Session, user: User):
+    """
+    Retorna uma lista de cargos disponíveis para inscrição, 
+    filtrando aqueles em que o usuário já está inscrito.
+    """
+    # Subconsulta para obter os role_ids em que o usuário já está inscrito
+    enrolled_role_ids = db.query(UserContest.contest_role_id).filter(
+        UserContest.user_id == user.id
+    ).subquery()
+    
+    # Query principal: busca cargos de concursos COMPLETED que o usuário NÃO está inscrito
+    available_roles = db.query(ContestRole).join(
+        PublishedContest, ContestRole.published_contest_id == PublishedContest.id
+    ).filter(
+        PublishedContest.status == ContestStatus.COMPLETED,
+        ~ContestRole.id.in_(enrolled_role_ids)  # Exclui cargos já inscritos
+    ).order_by(
+        PublishedContest.name, ContestRole.job_title
+    ).all()
+    
+    return available_roles
+
+def get_user_enrolled_roles(db: Session, user: User):
+    """
+    Retorna uma lista de cargos em que o usuário está inscrito.
+    """
+    enrolled_subscriptions = db.query(UserContest).options(
+        joinedload(UserContest.role).joinedload(ContestRole.contest)
+    ).filter(
+        UserContest.user_id == user.id
+    ).order_by(
+        UserContest.id.desc()
+    ).all()
+    
+    return enrolled_subscriptions
 
 def get_topic_groups_for_subscription(db: Session, user: User, user_contest_id: int):
     user_contest = db.query(UserContest).filter(UserContest.id == user_contest_id).first()
@@ -321,14 +362,11 @@ def get_or_generate_layout(db: Session, user: User, session_id: int):
 
     # 2. VERIFICA SE O CONTEÚDO JÁ EXISTE NO BANCO (CACHE)
     if session.generated_content:
-        print(f"Retornando layout do cache do DB para a sessão {session_id}.")
-        # Valida o JSON do banco com o schema Pydantic antes de retornar para garantir a integridade
-        # Usamos .model_validate() para Pydantic V2 ou .parse_obj() para V1
+        # Valida o JSON do banco com o schema Pydantic antes de retornar
         validated_layout = ProceduralLayout.model_validate(session.generated_content)
         return validated_layout
 
     # 3. SE NÃO EXISTE, GERA, SALVA E RETORNA
-    print(f"Gerando novo layout para a sessão {session_id}...")
     
     # Prepara os dados para o prompt
     topic_names = [t.topic for t in session.topics]
@@ -350,9 +388,7 @@ def get_or_generate_layout(db: Session, user: User, session_id: int):
     )
     
     # Salva o resultado (como dicionário) na coluna JSONB
-    # Usamos .model_dump() para Pydantic V2 ou .dict() para V1
     session.generated_content = ai_response_obj.model_dump()
     db.commit()
     
-    print(f"Layout salvo no DB para a sessão {session_id}.")
     return ai_response_obj

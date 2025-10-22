@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/Button';
 import Link from 'next/link';
@@ -9,6 +9,23 @@ import Link from 'next/link';
 type ProficiencyState = {
   [subject: string]: number;
 };
+
+// Hook simples de debounce para submissão
+function useDebouncedSubmit<T extends (...args: any[]) => Promise<void> | void>(
+  submitFn: T,
+  delayMs: number
+) {
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  return async (...args: Parameters<T>) => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+    }
+    await new Promise<void>((resolve) => {
+      timerRef.current = setTimeout(() => resolve(), delayMs);
+    });
+    await submitFn(...args);
+  };
+}
 
 export default function ProficiencyClientPage() {
   const router = useRouter();
@@ -22,6 +39,7 @@ export default function ProficiencyClientPage() {
   const [error, setError] = useState('');
   const [isDuplicateSubmission, setIsDuplicateSubmission] = useState(false);
   const [statusMessage, setStatusMessage] = useState('Carregando matérias...');
+  const lastClickRef = useRef<number>(0);
 
   useEffect(() => {
     if (!userContestId) {
@@ -49,7 +67,7 @@ export default function ProficiencyClientPage() {
         const initialProficiencies = data.reduce((acc: ProficiencyState, subject: string) => {
           acc[subject] = 0.5; // Inicializa no meio
           return acc;
-        }, {});
+        }, {} as ProficiencyState);
         setProficiencies(initialProficiencies);
 
       } catch (err) {
@@ -66,14 +84,16 @@ export default function ProficiencyClientPage() {
     setProficiencies(prev => ({ ...prev, [subject]: value }));
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const submitCore = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting) return; // lock imediato
+
     setIsSubmitting(true);
     setError('');
     setIsDuplicateSubmission(false);
 
     if (!userContestId) {
-      setError("ID da inscrição não encontrado.");
+      setError('ID da inscrição não encontrado.');
       setIsSubmitting(false);
       return;
     }
@@ -86,7 +106,7 @@ export default function ProficiencyClientPage() {
           'Content-Type': 'application/json'
       };
       
-      setStatusMessage("Salvando sua avaliação...");
+      setStatusMessage('Salvando sua avaliação...');
       const proficiencyPayload = {
           proficiencies: Object.entries(proficiencies).map(([subject, score]) => ({
               subject,
@@ -99,7 +119,6 @@ export default function ProficiencyClientPage() {
           body: JSON.stringify(proficiencyPayload),
       });
 
-      // Tratamento específico para erro 409 - Duplicate submission
       if (proficiencyResponse.status === 409) {
         const errorData = await proficiencyResponse.json();
         setError(errorData.detail || 'Você já enviou sua autoavaliação para esta inscrição.');
@@ -112,7 +131,7 @@ export default function ProficiencyClientPage() {
           throw new Error('Falha ao salvar sua autoavaliação.');
       }
       
-      setStatusMessage("Gerando seu plano de estudos personalizado com a IA... (Isso pode levar até um minuto)");
+      setStatusMessage('Gerando seu plano de estudos personalizado com a IA... (Isso pode levar até um minuto)');
       const planResponse = await fetch(`${apiUrl}/study/user-contests/${userContestId}/generate-plan`, {
           method: 'POST',
           headers: headers,
@@ -132,62 +151,70 @@ export default function ProficiencyClientPage() {
     }
   };
 
+  // Debounce 600ms + janela anti-burst 350ms
+  const handleSubmit = useDebouncedSubmit(async (e: React.FormEvent) => {
+    const now = Date.now();
+    if (now - lastClickRef.current < 350) return;
+    lastClickRef.current = now;
+    await submitCore(e);
+  }, 600);
+
   if (isLoading) {
     return (
-        <div className="flex items-center justify-center min-h-screen">
+        <div className='flex items-center justify-center min-h-screen'>
             <p>{statusMessage}</p>
         </div>
     );
   }
 
   return (
-    <div className="flex items-center justify-center min-h-screen bg-background py-12">
-      <div className="w-full max-w-2xl p-8 space-y-6 bg-surface rounded-xl shadow-md">
-        <div className="text-center">
-          <h1 className="text-3xl font-extrabold text-primary">Autoavaliação de Conhecimento</h1>
-          <p className="mt-2 text-md text-secondary">Seja honesto! Isso é crucial para criarmos o melhor plano para você.</p>
+    <div className='flex items-center justify-center min-h-screen bg-background py-12'>
+      <div className='w-full max-w-2xl p-8 space-y-6 bg-surface rounded-xl shadow-md'>
+        <div className='text-center'>
+          <h1 className='text-3xl font-extrabold text-primary'>Autoavaliação de Conhecimento</h1>
+          <p className='mt-2 text-md text-secondary'>Seja honesto! Isso é crucial para criarmos o melhor plano para você.</p>
         </div>
         
         {/* Exibe mensagem especial para duplicata */}
         {isDuplicateSubmission ? (
-          <div className="text-center p-8 bg-amber-50 border border-amber-200 rounded-lg">
-            <div className="flex items-center justify-center mb-4">
-              <svg className="h-8 w-8 text-amber-400" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+          <div className='text-center p-8 bg-amber-50 border border-amber-200 rounded-lg'>
+            <div className='flex items-center justify-center mb-4'>
+              <svg className='h-8 w-8 text-amber-400' viewBox='0 0 20 20' fill='currentColor'>
+                <path fillRule='evenodd' d='M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z' clipRule='evenodd' />
               </svg>
             </div>
-            <h3 className="text-lg font-semibold text-amber-800 mb-2">Autoavaliação Já Enviada</h3>
-            <p className="text-amber-700 mb-4">{error}</p>
-            <p className="text-sm text-amber-600 mb-6">
+            <h3 className='text-lg font-semibold text-amber-800 mb-2'>Autoavaliação Já Enviada</h3>
+            <p className='text-amber-700 mb-4'>{error}</p>
+            <p className='text-sm text-amber-600 mb-6'>
               Sua autoavaliação anterior ainda está válida. Você pode acessar seu plano de estudos no dashboard.
             </p>
-            <Link href="/dashboard" passHref>
-              <Button className="bg-amber-600 hover:bg-amber-700 text-white">
+            <Link href='/dashboard' passHref>
+              <Button className='bg-amber-600 hover:bg-amber-700 text-white'>
                 Voltar ao Dashboard
               </Button>
             </Link>
           </div>
         ) : isSubmitting ? (
-             <div className="text-center p-8">
-                <p className="text-lg font-semibold animate-pulse text-brand">{statusMessage}</p>
+             <div className='text-center p-8'>
+                <p className='text-lg font-semibold animate-pulse text-brand'>{statusMessage}</p>
             </div>
         ) : (
             <form onSubmit={handleSubmit}>
-                <div className="space-y-6">
+                <div className='space-y-6'>
                     {subjects.map(subject => (
-                        <div key={subject} className="py-4 border-t border-border first:border-t-0">
-                            <label className="block text-md font-semibold text-primary">{subject}</label>
-                            <p className="text-sm text-secondary mb-3">Arraste para indicar seu nível, de iniciante a avançado.</p>
+                        <div key={subject} className='py-4 border-t border-border first:border-t-0'>
+                            <label className='block text-md font-semibold text-primary'>{subject}</label>
+                            <p className='text-sm text-secondary mb-3'>Arraste para indicar seu nível, de iniciante a avançado.</p>
                             <input
-                                type="range"
-                                min="0"
-                                max="1"
-                                step="0.1"
+                                type='range'
+                                min='0'
+                                max='1'
+                                step='0.1'
                                 value={proficiencies[subject] ?? 0.5}
                                 onChange={(e) => handleProficiencyChange(subject, parseFloat(e.target.value))}
-                                className="w-full h-2 bg-border rounded-lg appearance-none cursor-pointer accent-brand"
+                                className='w-full h-2 bg-border rounded-lg appearance-none cursor-pointer accent-brand'
                             />
-                            <div className="flex justify-between text-xs text-secondary mt-1 px-1">
+                            <div className='flex justify-between text-xs text-secondary mt-1 px-1'>
                                 <span>Iniciante</span>
                                 <span>Intermediário</span>
                                 <span>Avançado</span>
@@ -196,10 +223,10 @@ export default function ProficiencyClientPage() {
                     ))}
                 </div>
 
-                {error && !isDuplicateSubmission && <p className="text-sm text-red-600 text-center mt-4">{error}</p>}
+                {error && !isDuplicateSubmission && <p className='text-sm text-red-600 text-center mt-4'>{error}</p>}
                 
-                <div className="pt-6">
-                    <Button type="submit" disabled={isSubmitting}>
+                <div className='pt-6'>
+                    <Button type='submit' disabled={isSubmitting}>
                         Salvar e Gerar Meu Plano de Estudos
                     </Button>
                 </div>

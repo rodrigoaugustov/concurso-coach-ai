@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import OnboardingFlow from '@/components/OnboardingFlow';
 import StudyPlanManager from '@/components/StudyPlanManager';
+import PendingSelfAssessmentCTA from '@/components/PendingSelfAssessmentCTA';
 import { Button } from '@/components/ui/Button';
 import { useDashboardData } from '@/hooks/useDashboardData';
 import { Select } from '@/components/ui/Select';
@@ -18,6 +19,7 @@ export default function DashboardPage() {
   const { 
     user, 
     subscriptions, 
+    pendingSelfAssessments,
     isLoading, 
     error, 
     activeSubscriptionId, 
@@ -62,15 +64,33 @@ export default function DashboardPage() {
     }
     if (activeSubscriptionId) {
       return (
-        <StudyPlanManager 
-          nextSessionData={nextSession}
-          onGeneratePlan={handleGeneratePlan}
-          isGeneratingPlan={isGeneratingPlan}
-          isLoading={isLoading}
-        />
+        <>
+          {/* CTA para autoavaliações pendentes - sempre no topo quando existir */}
+          <PendingSelfAssessmentCTA 
+            pendingAssessments={pendingSelfAssessments} 
+            className="mb-6"
+          />
+          
+          <StudyPlanManager 
+            nextSessionData={nextSession}
+            onGeneratePlan={handleGeneratePlan}
+            isGeneratingPlan={isGeneratingPlan}
+            isLoading={isLoading}
+          />
+        </>
       );
     }
-    return <p className="text-center text-gray-500 py-20">Selecione um plano de estudo para começar.</p>;
+    return (
+      <>
+        {/* CTA para autoavaliações pendentes - mesmo sem plano ativo selecionado */}
+        <PendingSelfAssessmentCTA 
+          pendingAssessments={pendingSelfAssessments} 
+          className="mb-6"
+        />
+        
+        <p className="text-center text-gray-500 py-20">Selecione um plano de estudo para começar.</p>
+      </>
+    );
   };
   
   if (isLoading && !user) {

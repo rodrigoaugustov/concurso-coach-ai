@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.users.auth import get_current_user
 from app.users.models import User
-from app.contests.schemas import ContestRole
+from app.contests.schemas import ContestRoleForSubscription
 from . import services, schemas
 from .ui_schemas import ProceduralLayout
 
@@ -13,15 +13,14 @@ router = APIRouter()
 
 # === NOVOS ENDPOINTS PARA CORRIGIR BUG DE INSCRIÇÃO DUPLICADA ===
 
-@router.get("/available-roles", response_model=List[ContestRole], summary="Get available roles for enrollment")
+@router.get("/available-roles", response_model=List[ContestRoleForSubscription], summary="Get available roles for enrollment")
 def get_available_roles(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db)
 ):
     """
     Retorna uma lista de cargos disponíveis para inscrição,
-    excluindo aqueles em que o usuário já está inscrito.
-    
+    excluindo aqueles em que o usuário já está inscrito, com os dados do concurso (id, name).
     Ideal para o fluxo de onboarding, evitando re-inscrições acidentais.
     """
     return services.get_available_roles_for_user(db=db, user=current_user)

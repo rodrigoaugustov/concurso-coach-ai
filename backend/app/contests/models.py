@@ -40,7 +40,6 @@ class ContestRole(Base):
     contest = relationship("PublishedContest", back_populates="roles")
     exam_structure = relationship("ExamStructure", back_populates="role", cascade="all, delete-orphan")
     programmatic_content = relationship("ProgrammaticContent", back_populates="role", cascade="all, delete-orphan")
-    programmatic_content = relationship("ProgrammaticContent", back_populates="role", cascade="all, delete-orphan")
     user_subscriptions = relationship("UserContest", back_populates="role")
 
 

@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/Button';
 import Link from 'next/link';
 
@@ -27,10 +27,13 @@ function useDebouncedSubmit<T extends (...args: any[]) => Promise<void> | void>(
   };
 }
 
-export default function ProficiencyClientPage() {
+interface Props { initialId: string | null }
+
+export default function ProficiencyClientPage({ initialId }: Props) {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const userContestId = searchParams.get('user_contest_id');
+
+  // Ref como fonte de verdade: não dispara re-render e não depende de hooks de URL
+  const userContestIdRef = useRef<string | null>(null);
 
   const [subjects, setSubjects] = useState<string[]>([]);
   const [proficiencies, setProficiencies] = useState<ProficiencyState>({});
@@ -41,19 +44,29 @@ export default function ProficiencyClientPage() {
   const [statusMessage, setStatusMessage] = useState('Carregando matérias...');
   const lastClickRef = useRef<number>(0);
 
-  useEffect(() => {
-    if (!userContestId) {
+  // Montagem: valida ID, fixa ref e estabiliza URL antes de qualquer render subsequente
+  useLayoutEffect(() => {
+    if (!initialId) {
       setError('ID da inscrição não encontrado. Por favor, comece o processo novamente.');
       setIsLoading(false);
       return;
     }
+    userContestIdRef.current = initialId;
+    // Estabiliza a URL mantendo o query param (sem scroll)
+    router.replace(`/onboarding/proficiency?user_contest_id=${initialId}`, { scroll: false });
+  }, [initialId, router]);
+
+  // Busca das matérias usando o ID persistido em ref
+  useEffect(() => {
+    const id = userContestIdRef.current;
+    if (!id) return;
 
     const fetchSubjects = async () => {
       try {
         const token = localStorage.getItem('accessToken');
         const apiUrl = process.env.NEXT_PUBLIC_API_URL;
 
-        const response = await fetch(`${apiUrl}/study/user-contests/${userContestId}/subjects`, {
+        const response = await fetch(`${apiUrl}/study/user-contests/${id}/subjects`, {
           headers: { 'Authorization': `Bearer ${token}` },
         });
 
@@ -78,7 +91,7 @@ export default function ProficiencyClientPage() {
     };
 
     fetchSubjects();
-  }, [userContestId]);
+  }, []);
 
   const handleProficiencyChange = (subject: string, value: number) => {
     setProficiencies(prev => ({ ...prev, [subject]: value }));
@@ -92,7 +105,8 @@ export default function ProficiencyClientPage() {
     setError('');
     setIsDuplicateSubmission(false);
 
-    if (!userContestId) {
+    const id = userContestIdRef.current;
+    if (!id) {
       setError('ID da inscrição não encontrado.');
       setIsSubmitting(false);
       return;
@@ -113,7 +127,7 @@ export default function ProficiencyClientPage() {
               score,
           })),
       };
-      const proficiencyResponse = await fetch(`${apiUrl}/study/user-contests/${userContestId}/proficiency`, {
+      const proficiencyResponse = await fetch(`${apiUrl}/study/user-contests/${id}/proficiency`, {
           method: 'POST',
           headers: headers,
           body: JSON.stringify(proficiencyPayload),
@@ -132,7 +146,7 @@ export default function ProficiencyClientPage() {
       }
       
       setStatusMessage('Gerando seu plano de estudos personalizado com a IA... (Isso pode levar até um minuto)');
-      const planResponse = await fetch(`${apiUrl}/study/user-contests/${userContestId}/generate-plan`, {
+      const planResponse = await fetch(`${apiUrl}/study/user-contests/${id}/generate-plan`, {
           method: 'POST',
           headers: headers,
           timeout: 300000,
@@ -151,14 +165,6 @@ export default function ProficiencyClientPage() {
     }
   };
 
-  // Debounce 600ms + janela anti-burst 350ms
-  const handleSubmit = useDebouncedSubmit(async (e: React.FormEvent) => {
-    const now = Date.now();
-    if (now - lastClickRef.current < 350) return;
-    lastClickRef.current = now;
-    await submitCore(e);
-  }, 600);
-
   if (isLoading) {
     return (
         <div className='flex items-center justify-center min-h-screen'>
@@ -175,12 +181,11 @@ export default function ProficiencyClientPage() {
           <p className='mt-2 text-md text-secondary'>Seja honesto! Isso é crucial para criarmos o melhor plano para você.</p>
         </div>
         
-        {/* Exibe mensagem especial para duplicata */}
         {isDuplicateSubmission ? (
           <div className='text-center p-8 bg-amber-50 border border-amber-200 rounded-lg'>
             <div className='flex items-center justify-center mb-4'>
               <svg className='h-8 w-8 text-amber-400' viewBox='0 0 20 20' fill='currentColor'>
-                <path fillRule='evenodd' d='M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z' clipRule='evenodd' />
+                <path fillRule='evenodd' d='M8.257 3.099c..' />
               </svg>
             </div>
             <h3 className='text-lg font-semibold text-amber-800 mb-2'>Autoavaliação Já Enviada</h3>
@@ -199,7 +204,7 @@ export default function ProficiencyClientPage() {
                 <p className='text-lg font-semibold animate-pulse text-brand'>{statusMessage}</p>
             </div>
         ) : (
-            <form onSubmit={handleSubmit}>
+            <form onSubmit={submitCore}>
                 <div className='space-y-6'>
                     {subjects.map(subject => (
                         <div key={subject} className='py-4 border-t border-border first:border-t-0'>

@@ -12,10 +12,12 @@ function Loading() {
   );
 }
 
-export default function ProficiencyPage() {
+export default function ProficiencyPage({ searchParams }: { searchParams: { user_contest_id?: string } }) {
+  const initialId = searchParams?.user_contest_id ?? null;
   return (
     <Suspense fallback={<Loading />}>
-      <ProficiencyClientPage />
+      {/* Passa o ID via prop para o Client Component para evitar useSearchParams() */}
+      <ProficiencyClientPage initialId={initialId} />
     </Suspense>
   );
 }

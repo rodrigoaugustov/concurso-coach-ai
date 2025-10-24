@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.celery_worker import celery_app
 from app.core.database import SessionLocal
 from app.core.settings import settings
+from app.core.exceptions import AIValidationError
 from .models import PublishedContest, ContestStatus
 from .prompts import edict_extraction_prompt, subject_refinement_prompt
 from . import crud
@@ -128,8 +129,8 @@ def process_edict_task(self, contest_id: int):
                 if added_in_refined:
                     error_messages.append(f"IA de refinamento inventou tópicos: {added_in_refined}")
                 
-                # Levanta um erro claro para acionar a retentativa do Celery
-                raise ValueError("Inconsistência de tópicos após o refinamento da IA. " + " | ".join(error_messages))
+                # Levanta um erro de IA específico para acionar a retentativa do Celery
+                raise AIValidationError(error_messages)
 
             print("Pipeline de Extração - Validação: Consistência dos tópicos OK.")
         except Exception as e:

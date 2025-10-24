@@ -11,6 +11,17 @@ from app.core.exception_handlers import (
     coach_ai_exception_handler,
     validation_exception_handler,
 )
+from app.core.middleware import SecurityHeadersMiddleware
+
+# Rate limiting (lazy import to avoid optional dep crash)
+try:
+    from slowapi import Limiter
+    from slowapi.util import get_remote_address
+    limiter = Limiter(key_func=get_remote_address)
+    USE_RATE_LIMIT = True
+except Exception:
+    limiter = None
+    USE_RATE_LIMIT = False
 
 # Cria as tabelas no banco de dados
 models.Base.metadata.create_all(bind=engine)
@@ -34,6 +45,9 @@ app.add_middleware(
     allow_methods=["*"],    # Permite todos os métodos (GET, POST, etc.)
     allow_headers=["*"],    # Permite todos os cabeçalhos
 )
+
+# Security headers middleware
+app.add_middleware(SecurityHeadersMiddleware)
 
 # Exception handlers
 app.add_exception_handler(CoachAIException, coach_ai_exception_handler)

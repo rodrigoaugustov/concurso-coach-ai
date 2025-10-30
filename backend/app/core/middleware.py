@@ -8,7 +8,6 @@ from starlette.requests import Request
 from typing import Callable
 
 from .logging import get_logger, set_request_context, clear_request_context, generate_request_id
-from .security import decode_token_optional
 
 SECURITY_HEADERS = {
     "Strict-Transport-Security": "max-age=63072000; includeSubDomains; preload",
@@ -46,22 +45,41 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
             "/favicon.ico"
         }
 
+    def _extract_user_id_from_token(self, auth_header: str) -> str:
+        """Tenta extrair user_id do token JWT se presente."""
+        try:
+            if not auth_header.startswith("Bearer "):
+                return None
+            
+            token = auth_header.split(" ")[1]
+            
+            # Importação local para evitar dependência circular
+            from jose import jwt
+            from .settings import settings
+            
+            # Decodifica o token sem verificar expiração (apenas para logging)
+            payload = jwt.decode(
+                token, 
+                settings.JWT_SECRET_KEY, 
+                algorithms=[settings.JWT_ALGORITHM],
+                options={"verify_exp": False}  # Não verifica expiração para logging
+            )
+            
+            return payload.get("sub")  # subject é normalmente o user_id
+            
+        except Exception:
+            # Se não conseguir decodificar o token, retorna None
+            return None
+
     async def dispatch(self, request: Request, call_next: Callable):
         # Gera um ID único para esta requisição
         request_id = generate_request_id()
         
         # Tenta extrair user_id do token JWT se presente
         user_id = None
-        try:
-            auth_header = request.headers.get("authorization", "")
-            if auth_header.startswith("Bearer "):
-                token = auth_header.split(" ")[1]
-                payload = decode_token_optional(token)
-                if payload:
-                    user_id = payload.get("sub")
-        except Exception:
-            # Se não conseguir decodificar o token, continua sem user_id
-            pass
+        auth_header = request.headers.get("authorization", "")
+        if auth_header:
+            user_id = self._extract_user_id_from_token(auth_header)
         
         # Define o contexto da requisição
         set_request_context(request_id, user_id)

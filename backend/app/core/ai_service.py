@@ -5,6 +5,8 @@ from langchain_core.prompts import ChatPromptTemplate
 from pydantic import BaseModel as LangChainBaseModel
 from langchain_core.messages import HumanMessage
 from pydantic import BaseModel
+from .logging import get_logger
+import time
 
 
 class LangChainService:
@@ -18,6 +20,18 @@ class LangChainService:
             model_name (str): O nome do modelo a ser usado.
             temperature (float): A criatividade do modelo (0.0 = determinístico).
         """
+        self.logger = get_logger("ai_service")
+        self.provider = provider
+        self.model_name = model_name
+        self.temperature = temperature
+        
+        self.logger.info(
+            "Initializing AI service",
+            provider=provider,
+            model=model_name,
+            temperature=temperature
+        )
+        
         if provider == "google":
             self.llm = ChatGoogleGenerativeAI(
                 model=model_name, 
@@ -28,7 +42,9 @@ class LangChainService:
         # elif provider == "openai":
         #     self.llm = ChatOpenAI(model=model_name, api_key=api_key, temperature=temperature)
         else:
-            raise ValueError(f"Provedor '{provider}' não suportado.")
+            error_msg = f"Provedor '{provider}' não suportado."
+            self.logger.error("Unsupported AI provider", provider=provider)
+            raise ValueError(error_msg)
         
     def _create_chain(self, response_schema: Type[LangChainBaseModel]):
         """Método auxiliar para criar a cadeia de processamento."""
@@ -48,20 +64,51 @@ class LangChainService:
         Returns:
             Uma instância do objeto Pydantic 'response_schema' preenchida.
         """
-        # Vincula o schema de saída ao modelo para forçar a resposta JSON
-        structured_llm = self.llm.with_structured_output(response_schema)
+        start_time = time.time()
         
-        prompt = ChatPromptTemplate.from_template(prompt_template)
+        self.logger.info(
+            "Starting structured output generation",
+            schema=response_schema.__name__,
+            provider=self.provider,
+            model=self.model_name,
+            temperature=self.temperature,
+            prompt_keys=list(prompt_input.keys()) if prompt_input else []
+        )
         
-        # Cria a "cadeia" (chain) de execução: dados de entrada -> prompt -> modelo
-        chain = prompt | structured_llm
-        
-        print(f"AI Service (LangChain): Invocando cadeia com schema {response_schema.__name__}...")
-        # Executa a cadeia com os dados de entrada
-        response = chain.invoke(prompt_input)
-        print("AI Service (LangChain): Resposta estruturada recebida.")
-        
-        return response
+        try:
+            # Vincula o schema de saída ao modelo para forçar a resposta JSON
+            structured_llm = self.llm.with_structured_output(response_schema)
+            
+            prompt = ChatPromptTemplate.from_template(prompt_template)
+            
+            # Cria a "cadeia" (chain) de execução: dados de entrada -> prompt -> modelo
+            chain = prompt | structured_llm
+            
+            # Executa a cadeia com os dados de entrada
+            response = chain.invoke(prompt_input)
+            
+            duration_ms = round((time.time() - start_time) * 1000, 2)
+            
+            self.logger.info(
+                "Structured output generation completed",
+                schema=response_schema.__name__,
+                duration_ms=duration_ms,
+                success=True
+            )
+            
+            return response
+            
+        except Exception as e:
+            duration_ms = round((time.time() - start_time) * 1000, 2)
+            
+            self.logger.error(
+                "Structured output generation failed",
+                schema=response_schema.__name__,
+                duration_ms=duration_ms,
+                error=str(e),
+                error_type=type(e).__name__
+            )
+            raise
     
     def generate_structured_output_from_content(
         self,
@@ -71,20 +118,90 @@ class LangChainService:
         """
         Gera uma saída estruturada a partir de uma lista de conteúdos (multimodal).
         """
-        chain = self._create_chain(response_schema)
+        start_time = time.time()
         
-        # Constrói a mensagem a partir das partes
-        message = HumanMessage(content=content_parts)
+        # Conta tipos de conteúdo para logging
+        content_types = {}
+        for part in content_parts:
+            part_type = part.get('type', 'unknown')
+            content_types[part_type] = content_types.get(part_type, 0) + 1
         
-        print(f"AI Service (LangChain/Content): Invocando cadeia com schema {response_schema.__name__}...")
-        response = chain.invoke([message])
-        print("AI Service (LangChain/Content): Resposta recebida.")
-        return response
+        self.logger.info(
+            "Starting multimodal content processing",
+            schema=response_schema.__name__,
+            provider=self.provider,
+            model=self.model_name,
+            content_parts_count=len(content_parts),
+            content_types=content_types
+        )
+        
+        try:
+            chain = self._create_chain(response_schema)
+            
+            # Constrói a mensagem a partir das partes
+            message = HumanMessage(content=content_parts)
+            
+            response = chain.invoke([message])
+            
+            duration_ms = round((time.time() - start_time) * 1000, 2)
+            
+            self.logger.info(
+                "Multimodal content processing completed",
+                schema=response_schema.__name__,
+                duration_ms=duration_ms,
+                success=True
+            )
+            
+            return response
+            
+        except Exception as e:
+            duration_ms = round((time.time() - start_time) * 1000, 2)
+            
+            self.logger.error(
+                "Multimodal content processing failed",
+                schema=response_schema.__name__,
+                duration_ms=duration_ms,
+                error=str(e),
+                error_type=type(e).__name__
+            )
+            raise
     
     def invoke_with_history(self, messages: List, response_schema: Type[BaseModel]) -> BaseModel:
-        structured_llm = self.llm.with_structured_output(response_schema)
+        """Invoca o modelo com histórico de conversação."""
+        start_time = time.time()
         
-        print(f"AI Service (LangChain/History): Invocando cadeia com histórico e schema {response_schema.__name__}...")
-        response = structured_llm.invoke(messages)
-        print("AI Service (LangChain/History): Resposta recebida.")
-        return response
+        self.logger.info(
+            "Starting conversation with history",
+            schema=response_schema.__name__,
+            message_count=len(messages),
+            provider=self.provider,
+            model=self.model_name
+        )
+        
+        try:
+            structured_llm = self.llm.with_structured_output(response_schema)
+            
+            response = structured_llm.invoke(messages)
+            
+            duration_ms = round((time.time() - start_time) * 1000, 2)
+            
+            self.logger.info(
+                "Conversation with history completed",
+                schema=response_schema.__name__,
+                duration_ms=duration_ms,
+                success=True
+            )
+            
+            return response
+            
+        except Exception as e:
+            duration_ms = round((time.time() - start_time) * 1000, 2)
+            
+            self.logger.error(
+                "Conversation with history failed",
+                schema=response_schema.__name__,
+                duration_ms=duration_ms,
+                error=str(e),
+                error_type=type(e).__name__
+            )
+            raise

@@ -11,7 +11,18 @@ from app.core.exception_handlers import (
     coach_ai_exception_handler,
     validation_exception_handler,
 )
-from app.core.middleware import SecurityHeadersMiddleware
+from app.core.middleware import SecurityHeadersMiddleware, RequestLoggingMiddleware
+from app.core.settings import settings
+from app.core.logging import setup_logging, get_logger
+
+# Configura o sistema de logging estruturado
+setup_logging(
+    log_level=settings.LOG_LEVEL,
+    is_development=(settings.ENVIRONMENT == "development")
+)
+
+# Logger para o módulo main
+logger = get_logger("main")
 
 # Rate limiting (lazy import to avoid optional dep crash)
 try:
@@ -19,12 +30,16 @@ try:
     from slowapi.util import get_remote_address
     limiter = Limiter(key_func=get_remote_address)
     USE_RATE_LIMIT = True
-except Exception:
+    logger.info("Rate limiting enabled")
+except Exception as e:
     limiter = None
     USE_RATE_LIMIT = False
+    logger.warning("Rate limiting disabled", error=str(e))
 
 # Cria as tabelas no banco de dados
+logger.info("Creating database tables")
 models.Base.metadata.create_all(bind=engine)
+logger.info("Database tables created successfully")
 
 app = FastAPI(
     title="Concurso Coach AI API",
@@ -38,6 +53,7 @@ origins = [
     "http://localhost:3000", # A origem do nosso frontend Next.js em desenvolvimento
 ]
 
+logger.info("Configuring CORS middleware", allowed_origins=origins)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins, # Permite as origens na lista
@@ -46,18 +62,33 @@ app.add_middleware(
     allow_headers=["*"],    # Permite todos os cabeçalhos
 )
 
+# Request logging middleware (deve ser adicionado antes de outros middlewares)
+logger.info("Adding request logging middleware")
+app.add_middleware(RequestLoggingMiddleware)
+
 # Security headers middleware
+logger.info("Adding security headers middleware")
 app.add_middleware(SecurityHeadersMiddleware)
 
 # Exception handlers
+logger.info("Configuring exception handlers")
 app.add_exception_handler(CoachAIException, coach_ai_exception_handler)
 app.add_exception_handler(RequestValidationError, validation_exception_handler)
 
 # Inclui os roteadores das diferentes partes da aplicação
+logger.info("Registering API routers")
 app.include_router(users_router, prefix="/api/v1", tags=["Users"])
 app.include_router(contests_router, prefix="/api/v1/contests", tags=["Contests"])
 app.include_router(study_router, prefix="/api/v1/study", tags=["Study"])
 
 @app.get("/health")
 def health_check():
+    logger.debug("Health check requested")
     return {"status": "ok"}
+
+logger.info(
+    "FastAPI application initialized successfully",
+    environment=settings.ENVIRONMENT,
+    log_level=settings.LOG_LEVEL,
+    rate_limiting_enabled=USE_RATE_LIMIT
+)

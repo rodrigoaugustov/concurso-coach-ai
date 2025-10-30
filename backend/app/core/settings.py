@@ -20,5 +20,10 @@ class Settings(BaseSettings):
 
     # Chave de API para o Google Gemini
     GEMINI_API_KEY: str
+    
+    # Configurações de Logging
+    LOG_LEVEL: str = "INFO"
+    LOG_FORMAT: str = "json"  # "json" para produção, "console" para desenvolvimento
+    ENVIRONMENT: str = "development"  # "development" ou "production"
 
 settings = Settings()

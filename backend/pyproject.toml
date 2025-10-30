@@ -34,7 +34,8 @@ dependencies = [
 ]
 
 [tool.uv]
+# Você pode configurar o comportamento do uv aqui, se necessário.
 
 [tool.pytest.ini_options]
-addopts = "-q --cov=app/core --cov-report=term-missing"
+addopts = "-q"
 pythonpath = ["backend/app"]

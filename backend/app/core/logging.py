@@ -11,13 +11,12 @@ Este módulo configura um sistema de logging JSON estruturado que facilita:
 import logging
 import logging.config
 import sys
-from typing import Dict, Any, Optional
+from typing import Optional
 import uuid
 from contextvars import ContextVar
 
 import structlog
 from structlog import stdlib
-from structlog.processors import CallsiteParameterAdder
 
 # Context variables para rastreamento de requisições
 request_id_var: ContextVar[Optional[str]] = ContextVar('request_id', default=None)
@@ -89,6 +88,22 @@ def filter_sensitive_data(logger, method_name, event_dict):
     return clean_dict(event_dict)
 
 
+# Substitui CallsiteParameterAdder por um processor compatível
+# que adiciona pathname e lineno usando record do stdlib
+
+def add_callsite(logger, method_name, event_dict):
+    record = event_dict.get('_record')
+    if record is not None:
+        try:
+            event_dict['pathname'] = record.pathname
+            event_dict['lineno'] = record.lineno
+            event_dict['funcName'] = getattr(record, 'funcName', None)
+            event_dict['module'] = getattr(record, 'module', None)
+        except Exception:
+            pass
+    return event_dict
+
+
 def setup_logging(log_level: str = "INFO", is_development: bool = True) -> None:
     """Configura o sistema de logging estruturado.
     
@@ -106,10 +121,9 @@ def setup_logging(log_level: str = "INFO", is_development: bool = True) -> None:
     
     # Processadores comum para ambos os ambientes
     processors = [
-        # Adiciona informações de arquivo/linha quando disponível
-        CallsiteParameterAdder(
-            parameters=[CallsiteParameterAdder.PATHNAME, CallsiteParameterAdder.LINENO]
-        ),
+        # Adiciona informações de arquivo/linha a partir do record stdlib
+        stdlib.ProcessorFormatter.wrap_for_formatter,
+        add_callsite,
         # Adiciona contexto da requisição
         add_request_context,
         # Adiciona severity level
@@ -122,7 +136,7 @@ def setup_logging(log_level: str = "INFO", is_development: bool = True) -> None:
         structlog.stdlib.add_logger_name,
         # Adiciona nível do log
         structlog.stdlib.add_log_level,
-        # Prepara para o stdlib
+        # Prepara args posicionais
         structlog.stdlib.PositionalArgumentsFormatter(),
     ]
     
@@ -139,9 +153,6 @@ def setup_logging(log_level: str = "INFO", is_development: bool = True) -> None:
             structlog.processors.JSONRenderer()
         ])
     
-    # Finaliza com o processor do stdlib
-    processors.append(structlog.stdlib.ProcessorFormatter.wrap_for_formatter)
-    
     structlog.configure(
         processors=processors,
         context_class=dict,
@@ -157,7 +168,7 @@ def setup_logging(log_level: str = "INFO", is_development: bool = True) -> None:
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("langchain").setLevel(logging.INFO)
     logging.getLogger("google.cloud").setLevel(logging.WARNING)
-    
+
 
 def get_logger(name: str = None) -> structlog.stdlib.BoundLogger:
     """Retorna um logger estruturado configurado."""

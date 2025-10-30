@@ -42,6 +42,10 @@ def generate_request_id() -> str:
 
 def add_request_context(logger, method_name, event_dict):
     """Processor que adiciona contexto da requisição aos logs."""
+    # Validação de segurança para evitar tuple
+    if not isinstance(event_dict, dict):
+        return event_dict
+        
     request_id = request_id_var.get()
     user_id = user_id_var.get()
     
@@ -55,6 +59,10 @@ def add_request_context(logger, method_name, event_dict):
 
 def add_severity_level(logger, method_name, event_dict):
     """Processor que padroniza o campo level para compatibilidade com Google Cloud Logging."""
+    # Validação de segurança para evitar tuple
+    if not isinstance(event_dict, dict):
+        return event_dict
+        
     level = event_dict.get('level')
     if level:
         # Mapeia níveis Python para Google Cloud Logging severity
@@ -72,6 +80,10 @@ def add_severity_level(logger, method_name, event_dict):
 
 def filter_sensitive_data(logger, method_name, event_dict):
     """Processor que remove dados sensíveis dos logs."""
+    # Validação de segurança para evitar tuple
+    if not isinstance(event_dict, dict):
+        return event_dict
+        
     sensitive_fields = ['password', 'token', 'api_key', 'secret']
     
     def clean_dict(data):
@@ -86,22 +98,6 @@ def filter_sensitive_data(logger, method_name, event_dict):
         return data
     
     return clean_dict(event_dict)
-
-
-# Substitui CallsiteParameterAdder por um processor compatível
-# que adiciona pathname e lineno usando record do stdlib
-
-def add_callsite(logger, method_name, event_dict):
-    record = event_dict.get('_record')
-    if record is not None:
-        try:
-            event_dict['pathname'] = record.pathname
-            event_dict['lineno'] = record.lineno
-            event_dict['funcName'] = getattr(record, 'funcName', None)
-            event_dict['module'] = getattr(record, 'module', None)
-        except Exception:
-            pass
-    return event_dict
 
 
 def setup_logging(log_level: str = "INFO", is_development: bool = True) -> None:
@@ -119,11 +115,8 @@ def setup_logging(log_level: str = "INFO", is_development: bool = True) -> None:
         level=getattr(logging, log_level.upper(), logging.INFO),
     )
     
-    # Processadores comum para ambos os ambientes
+    # Pipeline simples e compatível - sem CallsiteParameterAdder para evitar problemas
     processors = [
-        # Adiciona informações de arquivo/linha a partir do record stdlib
-        stdlib.ProcessorFormatter.wrap_for_formatter,
-        add_callsite,
         # Adiciona contexto da requisição
         add_request_context,
         # Adiciona severity level

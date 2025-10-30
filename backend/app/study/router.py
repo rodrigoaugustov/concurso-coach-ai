@@ -100,7 +100,7 @@ def submit_proficiency_assessment(
 
 @router.post("/user-contests/{user_contest_id}/generate-plan", response_model=schemas.PlanGenerationResponse)
 @limit_generate_plan
-def generate_study_plan_endpoint(
+def generate_study_plan_endpoint(request: Request,
     user_contest_id: int,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db)    

@@ -1,38 +1,25 @@
-# Concurso Coach AI Backend
+# backend/README.md (trecho adicionado ao final)
 
-Este é o backend para o Concurso Coach AI, uma aplicação para auxiliar nos estudos para concursos públicos.
+## Refatoração: Code Smells (Issue #21)
 
-## Instalação
+Este branch implementa a refatoração para reduzir God Classes, métodos longos e magic numbers.
 
-1. Crie um ambiente virtual:
+- Constantes centralizadas: `app/core/constants.py`
+- Validadores centralizados: `app/core/validators.py`
+- Study pipeline decomposto:
+  - `app/study/data_collector.py`
+  - `app/study/topic_analyzer.py`
+  - `app/study/plan_organizer.py`
+  - `app/study/plan_persister.py`
+  - Orquestrador: `app/study/plan_generator.py`
+- Contests task delegada para `EdictProcessor`:
+  - `app/contests/edict_processor.py`
+  - Task Celery mantém assinatura e retry: `app/contests/tasks.py`
 
-   ```bash
-   uv venv
-   ```
-
-2. Ative o ambiente virtual:
-
-   - No Windows:
-     ```bash
-     .venv\Scripts\Activate.ps1
-     ```
-   - No macOS e Linux:
-     ```bash
-     source .venv/bin/activate
-     ```
-
-3. Instale as dependências:
-
-   ```bash
-   uv pip install -r requirements.txt
-   ```
-
-## Como Rodar
-
-Para iniciar o servidor de desenvolvimento, execute o seguinte comando:
-
-```bash
-uvicorn main:app --reload
-```
-
-O servidor estará disponível em `http://127.0.0.1:8000`.
+### Testes adicionados
+- `tests/unit/test_core/test_constants.py`
+- `tests/unit/test_core/test_validators.py`
+- `tests/unit/test_study/test_plan_generator_equivalence.py`
+- `tests/unit/test_study/test_validators_integration.py`
+- `tests/unit/test_contests/test_edict_processor.py`
+- `tests/unit/test_contests/test_tasks_delegation.py`

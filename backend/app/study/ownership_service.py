@@ -1,22 +1,30 @@
 from __future__ import annotations
 from typing import Optional
-from fastapi import Depends, HTTPException, status
 from sqlalchemy.orm import Session
-
-from app.core.database import get_db
-from app.users.models import UserContest
+from app.users.models import UserTopicProgress
 
 class OwnershipService:
     def __init__(self, db: Session):
         self.db = db
 
-    def ensure_user_contest_topic(self, user_id: int, user_contest_id: int, topic_id: int) -> UserContest:
-        uc = self.db.query(UserContest).filter(UserContest.id == user_contest_id, UserContest.user_id == user_id).first()
-        if not uc:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Inscrição do usuário não encontrada")
-        # TODO: validar se topic_id pertence ao conteúdo do concurso do usuário
-        return uc
-
     def estimate_proficiency(self, user_id: int, topic_id: int) -> int:
-        # TODO: calcular pela tabela UserTopicProgress (0..1) e converter para 1..10
-        return 5
+        """Calcula proficiência real do usuário no tópico (1..10).
+        Regra:
+        - Busca UserTopicProgress.proficiency (0..1)
+        - Converte para escala 1..10 (mín 1)
+        - Arredonda para inteiro
+        """
+        prog = (
+            self.db.query(UserTopicProgress)
+            .filter(UserTopicProgress.user_id == user_id, UserTopicProgress.topic_id == topic_id)
+            .first()
+        )
+        if not prog or prog.proficiency is None:
+            return 5
+        try:
+            val = float(prog.proficiency)
+        except Exception:
+            return 5
+        val = max(0.0, min(1.0, val))
+        scaled = int(round(1 + val * 9))
+        return max(1, min(10, scaled))

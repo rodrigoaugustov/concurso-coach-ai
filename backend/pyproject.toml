@@ -1,21 +1,45 @@
 [project]
-name = "backend"
+name = "concurso-coach-ai-backend"
 version = "0.1.0"
-description = "Concurso Coach AI Backend"
-requires-python = ">=3.10"
-
+description = "Backend API for the Concurso Coach AI platform."
+authors = [
+    {name = "Rodrigo Vieira", email = "rodrigoaugustov@gmail.com"},
+]
+requires-python = ">=3.11,<3.13"
 dependencies = [
-    # existentes...
-    "fastapi>=0.115.0",
-    "uvicorn>=0.30.0",
-    "sqlalchemy>=2.0.0",
-    "pydantic>=2.5.0",
-    "langchain-community>=0.2.0",
+    "fastapi>=0.111.0",
+    "uvicorn[standard]>=0.29.0",
+    "sqlalchemy>=2.0.30",
+    "psycopg2-binary>=2.9.9",
+    "pydantic-settings>=2.2.1",
+    "passlib[bcrypt]==1.7.4",
+    "bcrypt==3.2.2",
+    "python-jose[cryptography]>=3.3.0",
+    "python-multipart>=0.0.9",
+    "pydantic[email]>=2.12.3",
+    "google-cloud-storage>=3.4.1",
+    "redis>=4.2",
+    "celery>=5.5.3",
+    "httpx>=0.28.1",
+    "flower>=2.0.1",
+    "langchain>=1.0.0",
+    "langchain-google-genai>=3.0.0",
+    "langchain-openai>=1.0.0",
+    "python-magic>=0.4.27",
+    "slowapi>=0.1.9",
+    "bleach>=6.2.0",
+    "email-validator>=2.2.0",
+    "structlog>=24.4.0",
+    "python-json-logger>=2.0.7",
+    # Novas dependências para Guided Learning (LangChain-first)
     "langgraph>=0.2.0",
+    "langchain-community>=0.2.0",
     "langchain-postgres>=0.0.6",
-    "langchain-google-genai>=2.0.0",
 ]
 
+[tool.uv]
+# Você pode configurar o comportamento do uv aqui, se necessário.
+
 [tool.pytest.ini_options]
-pythonpath = ["app"]
 addopts = "-q"
+pythonpath = ["backend/app"]

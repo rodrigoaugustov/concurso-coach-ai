@@ -10,6 +10,7 @@ from langchain.output_parsers.retry import RetryWithErrorOutputParser
 from .settings import settings
 from .logging import get_logger
 
+# Nova classe não remove nem substitui serviços existentes; é complementar
 class LangChainService:
     """Factory de chains LangChain-first com cache e helpers async."""
     def __init__(self):
@@ -28,19 +29,15 @@ class LangChainService:
         key = self.chain_key(template, schema)
         if key in self._chain_cache:
             return self._chain_cache[key]
-
         if schema:
             parser = PydanticOutputParser(pydantic_object=schema)
             chain: Runnable = template | self.llm | parser
         else:
             chain = template | self.llm
-
         self._chain_cache[key] = chain
         return chain
 
     def create_self_correcting_chain(self, template: ChatPromptTemplate, schema: Type[BaseModel]) -> Runnable:
         parser = PydanticOutputParser(pydantic_object=schema)
-        retrying_parser = RetryWithErrorOutputParser.from_llm(
-            parser=parser, llm=self.llm, max_retries=3
-        )
+        retrying_parser = RetryWithErrorOutputParser.from_llm(parser=parser, llm=self.llm, max_retries=3)
         return template | self.llm | retrying_parser

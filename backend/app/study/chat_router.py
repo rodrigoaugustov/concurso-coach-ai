@@ -8,7 +8,6 @@ from langchain_core.messages import HumanMessage, AIMessage
 
 from app.core.security import get_current_user
 from app.core.database import get_db
-from app.core.rate_limiting import limiter
 
 from .chat_schemas import ChatStartRequest, ChatContinueRequest
 from .agents_graph import build_study_graph
@@ -59,7 +58,6 @@ async def stream_llm_deltas(chat_history: list, topic_name: str, proficiency_lev
         yield {"type": "final", "content": final_text}
 
 @router.post("/start")
-@limiter.limit("5/minute")
 async def start_chat_session(payload: ChatStartRequest, request: Request, db: Session = Depends(get_db), user=Depends(get_current_user)):
     # Validação de ownership não substitui regras de outros endpoints
     owner = OwnershipService(db)
@@ -107,7 +105,6 @@ async def start_chat_session(payload: ChatStartRequest, request: Request, db: Se
     return await sse_stream(gen())
 
 @router.post("/{chat_id}/continue")
-@limiter.limit("30/minute")
 async def continue_chat_session(chat_id: str, payload: ChatContinueRequest, request: Request, db: Session = Depends(get_db), user=Depends(get_current_user)):
     thread = _session_threads.get(chat_id)
     if not thread or thread.get("user_id") != user.id:

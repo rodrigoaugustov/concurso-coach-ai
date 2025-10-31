@@ -1,6 +1,6 @@
 from __future__ import annotations
-from typing import AsyncGenerator, Dict
 import json
+from typing import AsyncGenerator, Dict
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
@@ -9,6 +9,7 @@ from langchain_core.messages import HumanMessage, AIMessage
 from app.core.security import get_current_user
 from app.core.database import get_db
 from app.core.rate_limiting import limiter
+from app.core.analytics import interaction_timer
 
 from .chat_schemas import ChatStartRequest, ChatContinueRequest
 from .agents_graph import build_study_graph
@@ -33,7 +34,9 @@ async def sse_stream(generator: AsyncGenerator[dict, None]) -> StreamingResponse
     return StreamingResponse(event_source(), media_type="text/event-stream")
 
 async def stream_llm_deltas(chat_history: list, topic_name: str, proficiency_level: int, banca: str | None) -> AsyncGenerator[dict, None]:
-    """Emite eventos delta/final usando astream do LLM com template do tutor."""
+    from app.core.langchain_service import LangChainService
+    from app.core.prompt_templates import TUTOR_SYSTEM_TEMPLATE
+
     lc = LangChainService()
     prompt = TUTOR_SYSTEM_TEMPLATE.partial(
         topic_name=topic_name,
@@ -42,7 +45,6 @@ async def stream_llm_deltas(chat_history: list, topic_name: str, proficiency_lev
     )
     chain = lc.create_chain(prompt, schema=None)
 
-    # Input é a última mensagem humana no histórico
     last_human = next((m for m in reversed(chat_history) if isinstance(m, HumanMessage)), None)
     user_text = last_human.content if last_human else "Inicie a explicação do tópico."
 
@@ -76,18 +78,23 @@ async def start_chat_session(payload: ChatStartRequest, request: Request, db: Se
 
     async def gen():
         last_ai: str | None = None
-        # 1) Emite deltas diretamente do LLM para percepção de progresso
-        async for delta in stream_llm_deltas(initial_state["messages"], initial_state["topic_name"], initial_state["proficiency_level"], initial_state["banca"]):
-            yield delta
-        # 2) Executa grafo para atualizar estado e sugerir próximos passos
-        async for event in _app.astream(initial_state, config=config):
-            if "messages" in event:
-                msgs = event["messages"]
-                if msgs and isinstance(msgs[-1], AIMessage):
-                    last_ai = msgs[-1].content
-                    yield {"type": "final", "content": last_ai, "agent": event.get("agent", "explanation")}
-            if "suggestions" in event and event["suggestions"]:
-                yield {"type": "suggestions", "content": event["suggestions"]}
+        with interaction_timer({
+            "chat_id": chat_id,
+            "phase": "start",
+            "user_id": user.id,
+            "user_contest_id": payload.user_contest_id,
+            "topic_id": payload.topic_id,
+        }):
+            async for delta in stream_llm_deltas(initial_state["messages"], initial_state["topic_name"], initial_state["proficiency_level"], initial_state["banca"]):
+                yield delta
+            async for event in _app.astream(initial_state, config=config):
+                if "messages" in event:
+                    msgs = event["messages"]
+                    if msgs and isinstance(msgs[-1], AIMessage):
+                        last_ai = msgs[-1].content
+                        yield {"type": "final", "content": last_ai, "agent": event.get("agent", "explanation")}
+                if "suggestions" in event and event["suggestions"]:
+                    yield {"type": "suggestions", "content": event["suggestions"]}
         if last_ai:
             sugs = await _suggestions.generate(
                 assistant_message=last_ai,
@@ -122,18 +129,22 @@ async def continue_chat_session(chat_id: str, payload: ChatContinueRequest, requ
 
     async def gen():
         last_ai: str | None = None
-        # 1) Deltas imediatos do LLM com a última fala do usuário
-        async for delta in stream_llm_deltas(input_state["messages"], input_state["topic_name"], input_state["proficiency_level"], input_state["banca"]):
-            yield delta
-        # 2) Estado/sugestões do grafo
-        async for event in _app.astream(input_state, config=config):
-            if "messages" in event:
-                msgs = event["messages"]
-                if msgs and isinstance(msgs[-1], AIMessage):
-                    last_ai = msgs[-1].content
-                    yield {"type": "final", "content": last_ai, "agent": event.get("agent", "explanation")}
-            if "suggestions" in event and event["suggestions"]:
-                yield {"type": "suggestions", "content": event["suggestions"]}
+        with interaction_timer({
+            "chat_id": chat_id,
+            "phase": "continue",
+            "user_id": user.id,
+            "interaction_source": getattr(payload, "interaction_source", "typed"),
+        }):
+            async for delta in stream_llm_deltas(input_state["messages"], input_state["topic_name"], input_state["proficiency_level"], input_state["banca"]):
+                yield delta
+            async for event in _app.astream(input_state, config=config):
+                if "messages" in event:
+                    msgs = event["messages"]
+                    if msgs and isinstance(msgs[-1], AIMessage):
+                        last_ai = msgs[-1].content
+                        yield {"type": "final", "content": last_ai, "agent": event.get("agent", "explanation")}
+                if "suggestions" in event and event["suggestions"]:
+                    yield {"type": "suggestions", "content": event["suggestions"]}
         if last_ai:
             sugs = await _suggestions.generate(
                 assistant_message=last_ai,

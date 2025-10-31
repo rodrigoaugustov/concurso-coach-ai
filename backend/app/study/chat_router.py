@@ -4,16 +4,17 @@ import json
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
+from sqlalchemy import create_engine
 from langchain_core.messages import HumanMessage, AIMessage
 
-from app.core.security import get_current_user
+from app.users.security import get_current_user  # ajustado para o caminho correto do projeto
 from app.core.database import get_db
 
 from .chat_schemas import ChatStartRequest, ChatContinueRequest
 from .agents_graph import build_study_graph
 from .suggestions_service import SuggestionsService
 from .ownership_service import OwnershipService
-from langgraph.checkpoint.postgres import PostgresCheckpointSaver
+from langgraph.checkpoint.sql import SqlCheckpointSaver  # ajustado para import suportado
 from app.core.settings import settings
 from app.core.langchain_service import LangChainService
 from app.core.prompt_templates import TUTOR_SYSTEM_TEMPLATE
@@ -23,7 +24,8 @@ router = APIRouter(prefix="/api/v1/study/sessions", tags=["chat"])
 
 # Estado em memória apenas para roteamento; persistência real via checkpointer
 _session_threads: Dict[str, Dict] = {}
-_checkpointer = PostgresCheckpointSaver.from_conn_string(settings.DATABASE_URL)
+_engine = create_engine(settings.DATABASE_URL, future=True)
+_checkpointer = SqlCheckpointSaver(_engine)
 _app = build_study_graph().compile(checkpointer=_checkpointer)
 _suggestions = SuggestionsService()
 

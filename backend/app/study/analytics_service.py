@@ -1,9 +1,10 @@
-from __future__ import annotations
+from __future__ annotations
 from typing import Optional
 from sqlalchemy.orm import Session
 from app.study.models_analytics import ChatAnalytics
 
 class AnalyticsService:
+    """Serviço novo e isolado para persistir analytics do chat."""
     def __init__(self, db: Session):
         self.db = db
 

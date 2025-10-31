@@ -3,18 +3,18 @@ from typing import List
 from langchain.output_parsers import PydanticOutputParser
 from pydantic import BaseModel, Field
 from app.core.langchain_service import LangChainService
-from app.core.prompt_templates import ChatPromptTemplate, TUTOR_SYSTEM_TEMPLATE
+from app.core.prompt_templates import ChatPromptTemplate
 
 class SuggestionsModel(BaseModel):
     suggestions: List[str] = Field(min_length=2, max_length=5)
 
 class SuggestionsService:
+    """Serviço exclusivo do chat para gerar sugestões com IA. Não afeta outros fluxos."""
     def __init__(self):
         self.lc = LangChainService()
-        # Template dedicado para gerar apenas sugestões curtas e acionáveis
         self.template = ChatPromptTemplate.from_messages([
-            ("system", """Você é um tutor que gera sugestões de próximas ações para continuar uma aula.\nRetorne de 2 a 4 sugestões curtas, imperativas, em português, adequadas ao último conteúdo do assistente.\nSomente retorne JSON com a chave 'suggestions'."""),
-            ("human", """Última mensagem do assistente:\n{assistant_message}\n\nContexto: tópico={topic_name}, proficiência={proficiency_level}/10, banca={banca}.""")
+            ("system", "Retorne de 2 a 4 sugestões curtas, imperativas, em português, em JSON na chave 'suggestions'."),
+            ("human", "Última mensagem do assistente:\n{assistant_message}\n\nContexto: tópico={topic_name}, proficiência={proficiency_level}/10, banca={banca}.")
         ])
         self.chain = self.lc.create_chain(self.template, SuggestionsModel)
 

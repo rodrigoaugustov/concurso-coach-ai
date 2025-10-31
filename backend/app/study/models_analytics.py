@@ -1,11 +1,10 @@
-from __future__ import annotations
-from typing import Optional
+from __future__ annotations
 from datetime import datetime
 from sqlalchemy import Column, Integer, String, DateTime, JSON
-from sqlalchemy.orm import declarative_base
 from app.core.database import Base
 
 class ChatAnalytics(Base):
+    """Modelo novo para analytics do chat (requer migration). Não altera modelos existentes."""
     __tablename__ = "chat_analytics"
 
     id = Column(Integer, primary_key=True, autoincrement=True)

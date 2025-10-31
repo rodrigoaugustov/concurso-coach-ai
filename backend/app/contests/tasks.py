@@ -16,6 +16,7 @@ from .prompts import edict_extraction_prompt, subject_refinement_prompt
 from . import crud
 from app.core.ai_service import LangChainService
 from app.contests.ai_schemas import EdictExtractionResponse
+from app.core.constants import CeleryConstants, AIConstants
 
 # Logger para tasks do Celery
 logger = get_logger("contests.tasks")
@@ -24,10 +25,10 @@ logger = get_logger("contests.tasks")
     name="process_edict_task",
     bind=True,
     autoretry_for=(Exception,),
-    retry_kwargs={'max_retries': 3},
-    retry_backoff=5,
-    soft_time_limit=300,
-    time_limit=600,
+    retry_kwargs={'max_retries': CeleryConstants.MAX_RETRIES},
+    retry_backoff=CeleryConstants.RETRY_BACKOFF_SECONDS,
+    soft_time_limit=CeleryConstants.SOFT_TIME_LIMIT_SECONDS,
+    time_limit=CeleryConstants.HARD_TIME_LIMIT_SECONDS,
     acks_late=True
 )
 def process_edict_task(self, contest_id: int):
@@ -98,7 +99,7 @@ def process_edict_task(self, contest_id: int):
                     provider="google",
                     api_key=settings.GEMINI_API_KEY,
                     model_name="gemini-2.5-flash",
-                    temperature=1.0 # Para ter liberdade criativa na inferência das matérias
+                    temperature=AIConstants.TEMPERATURE_CREATIVE
                 )
 
                 # Monta as partes do conteúdo para a chamada multimodal

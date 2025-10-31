@@ -1,29 +1,22 @@
-from pydantic_settings import BaseSettings, SettingsConfigDict
+import os
+from functools import lru_cache
+from pydantic import BaseSettings
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file='../../.env', env_file_encoding='utf-8')
+    ENV: str = os.getenv("ENV", "development")
+    DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql+psycopg2://postgres:postgres@localhost:5432/concurso_coach_ai")
+    GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
 
-    DATABASE_URL: str
-    
-    # Novas configurações de segurança
-    JWT_SECRET_KEY: str
-    JWT_ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 dias
+    # Rate limiting defaults (podem ser ajustados por ENV)
+    UPLOAD_RATE_LIMIT: str = "20/minute" if ENV != "production" else "5/minute"
+    LOGIN_RATE_LIMIT: str = "100/hour" if ENV != "production" else "10/hour"
+    PLAN_GENERATION_RATE_LIMIT: str = "10/minute" if ENV != "production" else "2/minute"
 
-    # Configuração do Google Cloud Storage
-    GCS_BUCKET_NAME: str
-    GCP_PROJECT_ID: str
+    class Config:
+        env_file = ".env"
 
-    # URLs do Redis para o Celery
-    CELERY_BROKER_URL: str
-    CELERY_RESULT_BACKEND: str
+@lru_cache
+def get_settings():
+    return Settings()
 
-    # Chave de API para o Google Gemini
-    GEMINI_API_KEY: str
-    
-    # Configurações de Logging
-    LOG_LEVEL: str = "INFO"
-    LOG_FORMAT: str = "json"  # "json" para produção, "console" para desenvolvimento
-    ENVIRONMENT: str = "development"  # "development" ou "production"
-
-settings = Settings()
+settings = get_settings()

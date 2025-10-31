@@ -8,12 +8,13 @@ from langchain_core.messages import HumanMessage, AIMessage
 
 from app.core.security import get_current_user
 from app.core.database import get_db
-from app.core.rate_limiting import limiter  # assumindo módulo conforme issue #20
+from app.core.rate_limiting import limiter
 from slowapi.errors import RateLimitExceeded
 
 from .chat_schemas import ChatStartRequest, ChatContinueRequest
 from .agents_graph import build_study_graph
 from .suggestions_service import SuggestionsService
+from .ownership_service import OwnershipService
 from langgraph.checkpoint.postgres import PostgresCheckpointSaver
 from app.core.settings import settings
 
@@ -33,13 +34,17 @@ async def sse_stream(generator: AsyncGenerator[dict, None]) -> StreamingResponse
 @router.post("/start")
 @limiter.limit("5/minute")
 async def start_chat_session(payload: ChatStartRequest, request: Request, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    owner = OwnershipService(db)
+    uc = owner.ensure_user_contest_topic(user.id, payload.user_contest_id, payload.topic_id)
+    proficiency = owner.estimate_proficiency(user.id, payload.topic_id)
+
     chat_id = f"t_{user.id}_{payload.user_contest_id}_{payload.topic_id}"
     _session_threads[chat_id] = {"user_id": user.id, "context": payload.model_dump()}
 
     initial_state = {
         "messages": [HumanMessage(content="Iniciar sessão de aprendizagem guiada.")],
         "topic_name": str(payload.topic_id),
-        "proficiency_level": 5,
+        "proficiency_level": proficiency,
         "banca": payload.banca or "Genérica",
     }
     config = {"configurable": {"thread_id": chat_id}}
@@ -54,12 +59,11 @@ async def start_chat_session(payload: ChatStartRequest, request: Request, db: Se
                     yield {"type": "final", "content": last_ai, "agent": event.get("agent", "explanation")}
             if "suggestions" in event and event["suggestions"]:
                 yield {"type": "suggestions", "content": event["suggestions"]}
-        # Se não houve sugestões do grafo, gera sugestões via serviço dedicado
         if last_ai:
             sugs = await _suggestions.generate(
                 assistant_message=last_ai,
                 topic_name=str(payload.topic_id),
-                proficiency_level=5,
+                proficiency_level=proficiency,
                 banca=payload.banca,
             )
             yield {"type": "suggestions", "content": sugs}
@@ -74,11 +78,16 @@ async def continue_chat_session(chat_id: str, payload: ChatContinueRequest, requ
     if not thread or thread.get("user_id") != user.id:
         raise HTTPException(status_code=404, detail="Chat não encontrado")
 
+    owner = OwnershipService(db)
+    ctx = thread["context"]
+    uc = owner.ensure_user_contest_topic(user.id, ctx["user_contest_id"], ctx["topic_id"])
+    proficiency = owner.estimate_proficiency(user.id, ctx["topic_id"])
+
     input_state = {
         "messages": [HumanMessage(content=payload.message)],
-        "topic_name": str(thread["context"]["topic_id"]),
-        "proficiency_level": 5,
-        "banca": thread["context"].get("banca") or "Genérica",
+        "topic_name": str(ctx["topic_id"]),
+        "proficiency_level": proficiency,
+        "banca": ctx.get("banca") or "Genérica",
     }
     config = {"configurable": {"thread_id": chat_id}}
 
@@ -95,9 +104,9 @@ async def continue_chat_session(chat_id: str, payload: ChatContinueRequest, requ
         if last_ai:
             sugs = await _suggestions.generate(
                 assistant_message=last_ai,
-                topic_name=str(thread["context"]["topic_id"]),
-                proficiency_level=5,
-                banca=thread["context"].get("banca"),
+                topic_name=str(ctx["topic_id"]),
+                proficiency_level=proficiency,
+                banca=ctx.get("banca"),
             )
             yield {"type": "suggestions", "content": sugs}
         yield {"type": "done"}

@@ -246,7 +246,7 @@ class GuidedLearningService:
         request: ChatContinueRequest
     ) -> AsyncGenerator[str, None]:
         """
-        Continue session with streaming response.
+        Continue session with real streaming response using LangChain astream.
         
         Args:
             user_id: Authenticated user ID
@@ -301,59 +301,100 @@ class GuidedLearningService:
                 interaction_source=request.interaction_source
             )
             
-            # Stream the response from agents
+            # Route to appropriate agent
+            agent_type = self._simple_route(request.message)
+            
+            # Prepare streaming context
+            stream_context = {
+                "topic_name": session_context["topic_name"],
+                "subject": session_context["subject"],
+                "proficiency": int(session_context["proficiency"] * 10),
+                "banca": session_context.get("banca", "Não especificada"),
+                "supervisor_instructions": f"Responda como agente {agent_type} sobre '{request.message}'",
+                "messages": self._format_messages_for_stream(message_history + [HumanMessage(content=request.message)])
+            }
+            
+            # Stream response from AI using real LangChain streaming
+            template_name = f"{agent_type}_agent"
             accumulated_content = ""
             
-            # For now, we'll simulate streaming by processing normally and chunking
-            # In a full implementation, we'd modify the agent system to support streaming
-            assistant_message = await self.agents.process_message(
+            self.logger.info(
+                "Starting real AI streaming",
                 chat_id=chat_id,
-                user_id=user_id,
-                user_message=request.message,
-                session_context=session_context,
-                message_history=message_history
+                agent=agent_type,
+                template=template_name
             )
             
-            # Simulate streaming by chunking the response
-            content = assistant_message.content
-            chunk_size = 20  # Characters per chunk
+            try:
+                async for chunk in self.chain_factory.astream(template_name, stream_context):
+                    if chunk:
+                        accumulated_content += chunk
+                        
+                        delta_event = DeltaEvent(content=chunk)
+                        yield f"data: {delta_event.json()}\n\n"
             
-            for i in range(0, len(content), chunk_size):
-                chunk = content[i:i + chunk_size]
-                accumulated_content += chunk
+            except Exception as e:
+                self.logger.warning(
+                    "Real streaming failed, using fallback",
+                    error=str(e)
+                )
                 
-                delta_event = DeltaEvent(content=chunk)
-                yield f"data: {delta_event.json()}\n\n"
+                # Fallback to non-streaming response
+                assistant_message = await self.agents.process_message(
+                    chat_id=chat_id,
+                    user_id=user_id,
+                    user_message=request.message,
+                    session_context=session_context,
+                    message_history=message_history
+                )
                 
-                # Small delay to simulate streaming
-                await asyncio.sleep(0.1)
+                # Chunk the fallback response
+                content = assistant_message.content
+                chunk_size = 25
+                
+                for i in range(0, len(content), chunk_size):
+                    chunk = content[i:i + chunk_size]
+                    accumulated_content += chunk
+                    
+                    delta_event = DeltaEvent(content=chunk)
+                    yield f"data: {delta_event.json()}\n\n"
+                    
+                    await asyncio.sleep(0.05)  # Faster chunking
             
-            # Send final message
-            final_event = FinalEvent(message=assistant_message)
+            # Generate final structured response
+            suggestions = self._generate_suggestions_for_agent(agent_type)
+            
+            final_message = AssistantMessage(
+                content=accumulated_content,
+                ui_kind=agent_type if agent_type in ["explanation", "example", "quiz"] else "explanation",
+                agent=agent_type,
+                suggestions=suggestions
+            )
+            
+            # Send final message event
+            final_event = FinalEvent(message=final_message)
             yield f"data: {final_event.json()}\n\n"
             
-            # Send suggestions
-            if assistant_message.suggestions:
-                suggestions_event = SuggestionsEvent(
-                    suggestions=assistant_message.suggestions
-                )
-                yield f"data: {suggestions_event.json()}\n\n"
+            # Send suggestions event
+            suggestions_event = SuggestionsEvent(suggestions=suggestions)
+            yield f"data: {suggestions_event.json()}\n\n"
             
             # Save assistant message
             await self.persistence.save_message(
                 chat_id=chat_id,
                 thread_id=thread_id,
                 role="assistant",
-                content=assistant_message.content,
-                ui_kind=assistant_message.ui_kind,
-                agent=assistant_message.agent,
-                suggestions=assistant_message.suggestions
+                content=accumulated_content,
+                ui_kind=final_message.ui_kind,
+                agent=final_message.agent,
+                suggestions=suggestions
             )
             
             self.logger.info(
-                "Streaming session completed",
+                "Real streaming session completed",
                 chat_id=chat_id,
-                agent=assistant_message.agent
+                agent=agent_type,
+                content_length=len(accumulated_content)
             )
             
         except Exception as e:
@@ -369,6 +410,58 @@ class GuidedLearningService:
                 error_code="PROCESSING_ERROR"
             )
             yield f"data: {error_event.json()}\n\n"
+    
+    def _simple_route(self, message: str) -> str:
+        """Simple routing for streaming (same logic as agents)."""
+        message_lower = message.lower()
+        
+        if any(word in message_lower for word in [
+            "quiz", "teste", "avaliação", "pergunta", "questão", "exercício", 
+            "praticar", "treinar", "avaliar", "verificar"
+        ]):
+            return "quiz"
+        elif any(word in message_lower for word in [
+            "exemplo", "prático", "aplicação", "como fazer", "na prática", 
+            "caso real", "situação", "demonstre", "mostre"
+        ]):
+            return "example"
+        else:
+            return "explanation"
+    
+    def _format_messages_for_stream(self, messages: List[BaseMessage]) -> str:
+        """Format messages for streaming context."""
+        if not messages:
+            return "Primeira mensagem da sessão."
+        
+        formatted = []
+        for msg in messages[-3:]:  # Last 3 messages for streaming context
+            role = "Usuário" if isinstance(msg, HumanMessage) else "Assistente"
+            content = msg.content[:100] + "..." if len(msg.content) > 100 else msg.content
+            formatted.append(f"{role}: {content}")
+        
+        return "\n".join(formatted)
+    
+    def _generate_suggestions_for_agent(self, agent_type: str) -> List[str]:
+        """Generate suggestions specific to agent type."""
+        suggestions_map = {
+            "explanation": [
+                "Pode dar um exemplo prático?",
+                "Como isso aparece nas provas?",
+                "Quais são os principais erros?"
+            ],
+            "example": [
+                "Explique o passo a passo",
+                "Mostre outro exemplo",
+                "Vamos praticar?"
+            ],
+            "quiz": [
+                "Explique a resposta",
+                "Outra questão similar",
+                "Como melhorar?"
+            ]
+        }
+        
+        return suggestions_map.get(agent_type, suggestions_map["explanation"])
     
     async def complete_session(
         self,
@@ -481,23 +574,22 @@ class GuidedLearningService:
                 raise HTTPException(status_code=404, detail="Session not found")
             
             # Get message history from database
-            # For simplicity, we'll get from LangGraph history
             thread_id = f"chat_{chat_id}"
             message_history = await self.persistence.get_thread_history(thread_id)
             
             # Convert to chat messages
             messages = []
-            for msg in message_history:
+            for i, msg in enumerate(message_history):
                 if isinstance(msg, HumanMessage):
                     messages.append({
-                        "id": f"user_{len(messages)}",
+                        "id": f"user_{i}",
                         "role": "user",
                         "content": msg.content,
                         "created_at": datetime.utcnow().isoformat()
                     })
                 elif isinstance(msg, AIMessage):
                     messages.append({
-                        "id": f"assistant_{len(messages)}",
+                        "id": f"assistant_{i}",
                         "role": "assistant",
                         "content": msg.content,
                         "created_at": datetime.utcnow().isoformat()
@@ -507,9 +599,11 @@ class GuidedLearningService:
                 "chat_id": chat_id,
                 "topic_name": session.topic_name,
                 "subject": session.subject,
+                "proficiency": session.proficiency,
                 "status": session.status,
                 "created_at": session.created_at.isoformat(),
-                "message_count": len(messages)
+                "message_count": len(messages),
+                "last_agent": session.last_agent
             }
             
             return ChatHistoryResponse(
@@ -666,7 +760,8 @@ class GuidedLearningService:
             if progress:
                 # Update proficiency using weighted average
                 # New proficiency = 70% old + 30% quiz score
-                new_proficiency = (0.7 * progress.current_proficiency_score) + (0.3 * quiz_score)
+                old_proficiency = progress.current_proficiency_score
+                new_proficiency = (0.7 * old_proficiency) + (0.3 * quiz_score)
                 new_proficiency = max(0.0, min(1.0, new_proficiency))  # Clamp to [0, 1]
                 
                 progress.current_proficiency_score = new_proficiency
@@ -690,7 +785,7 @@ class GuidedLearningService:
                     "Topic progress updated",
                     user_contest_id=user_contest_id,
                     topic_id=topic_id,
-                    old_proficiency=progress.current_proficiency_score,
+                    old_proficiency=old_proficiency,
                     new_proficiency=new_proficiency,
                     quiz_score=quiz_score,
                     next_review_days=next_review_days

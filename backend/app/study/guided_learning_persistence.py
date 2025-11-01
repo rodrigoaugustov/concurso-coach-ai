@@ -4,8 +4,6 @@ Handles session state, message history, and thread management.
 """
 
 from typing import Dict, List, Any, Optional, Tuple
-from langchain_postgres import PostgresCheckpointSaver
-from langchain_community.chat_message_histories import SQLChatMessageHistory
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
 from sqlalchemy import create_engine, Column, String, Integer, DateTime, Text, Float, Boolean
 from sqlalchemy.ext.declarative import declarative_base
@@ -23,6 +21,14 @@ from .guided_learning_schemas import (
     ChatMessage,
     ConversationState
 )
+
+# Try to import PostgresCheckpointer, fallback to None if not available
+try:
+    from langchain_postgres import PostgresCheckpointSaver
+    POSTGRES_CHECKPOINTER_AVAILABLE = True
+except ImportError:
+    PostgresCheckpointSaver = None
+    POSTGRES_CHECKPOINTER_AVAILABLE = False
 
 Base = declarative_base()
 
@@ -62,6 +68,31 @@ class ChatMessageModel(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
+class InMemoryCheckpointer:
+    """Fallback in-memory checkpointer when PostgresCheckpointSaver is not available."""
+    
+    def __init__(self):
+        self._checkpoints: Dict[str, Dict[str, Any]] = {}
+        self.logger = get_logger("in_memory_checkpointer")
+        self.logger.warning("Using in-memory checkpointer - data will not persist between restarts")
+    
+    async def aput(self, config: Dict[str, Any], checkpoint: Dict[str, Any]):
+        """Store a checkpoint."""
+        thread_id = config.get("configurable", {}).get("thread_id")
+        if thread_id:
+            self._checkpoints[thread_id] = checkpoint
+            self.logger.debug("Stored checkpoint", thread_id=thread_id)
+    
+    async def aget(self, config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Retrieve a checkpoint."""
+        thread_id = config.get("configurable", {}).get("thread_id")
+        if thread_id:
+            checkpoint = self._checkpoints.get(thread_id)
+            self.logger.debug("Retrieved checkpoint", thread_id=thread_id, found=bool(checkpoint))
+            return checkpoint
+        return None
+
+
 class GuidedLearningPersistence:
     """
     Persistence manager for guided learning sessions.
@@ -76,10 +107,24 @@ class GuidedLearningPersistence:
         self.engine = create_engine(self.settings.database_url)
         self.SessionLocal = sessionmaker(bind=self.engine)
         
-        # Initialize LangGraph checkpointer
-        self.checkpointer = PostgresCheckpointSaver.from_conn_string(
-            self.settings.database_url
-        )
+        # Initialize checkpointer (with fallback)
+        if POSTGRES_CHECKPOINTER_AVAILABLE:
+            try:
+                self.checkpointer = PostgresCheckpointSaver.from_conn_string(
+                    self.settings.database_url
+                )
+                self.logger.info("PostgreSQL checkpointer initialized successfully")
+            except Exception as e:
+                self.logger.warning(
+                    "Failed to initialize PostgreSQL checkpointer, using in-memory fallback",
+                    error=str(e)
+                )
+                self.checkpointer = InMemoryCheckpointer()
+        else:
+            self.logger.warning(
+                "langchain-postgres not available, using in-memory checkpointer"
+            )
+            self.checkpointer = InMemoryCheckpointer()
         
         # Create tables if needed
         Base.metadata.create_all(self.engine)
@@ -244,10 +289,11 @@ class GuidedLearningPersistence:
             # Convert to BaseMessage objects
             messages = []
             for msg_data in messages_data:
-                if msg_data.get("type") == "human":
-                    messages.append(HumanMessage(content=msg_data["content"]))
-                elif msg_data.get("type") == "ai":
-                    messages.append(AIMessage(content=msg_data["content"]))
+                if isinstance(msg_data, dict):
+                    if msg_data.get("type") == "human":
+                        messages.append(HumanMessage(content=msg_data["content"]))
+                    elif msg_data.get("type") == "ai":
+                        messages.append(AIMessage(content=msg_data["content"]))
             
             return messages
             
@@ -457,8 +503,8 @@ class GuidedLearningPersistence:
             )
             return 0
     
-    def get_checkpointer(self) -> PostgresCheckpointSaver:
-        """Get the LangGraph checkpointer instance."""
+    def get_checkpointer(self):
+        """Get the checkpointer instance."""
         return self.checkpointer
 
 

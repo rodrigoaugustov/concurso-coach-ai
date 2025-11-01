@@ -8,7 +8,7 @@ from fastapi import HTTPException
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
 from sqlalchemy.orm import Session
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from ..core.ai_service import ChainFactory
 from ..core.logging import get_logger
@@ -181,6 +181,83 @@ class GuidedLearningService:
         if any(w in text for w in ["exemplo", "prático", "aplicação", "como fazer", "na prática", "caso real", "situação", "demonstre", "mostre"]):
             return "example"
         return "explanation"
+
+    async def complete_session(self, user_id: int, chat_id: str, request: ChatCompleteRequest) -> ChatCompleteResponse:
+        """Mark session as completed and update learning progress."""
+        self.logger.info("Completing chat session", user_id=user_id, chat_id=chat_id, quiz_score=request.quiz_score)
+        try:
+            session = await self.persistence.get_chat_session(chat_id)
+            if not session or session.user_id != user_id:
+                raise HTTPException(status_code=404, detail="Session not found")
+
+            # Update session state
+            await self.persistence.update_session_state(chat_id=chat_id, state="completed")
+
+            # If quiz_score provided, update topic progress
+            if request.quiz_score is not None:
+                score = request.quiz_score
+                # Clamp and validate
+                if not isinstance(score, (int, float)):
+                    raise HTTPException(status_code=400, detail="quiz_score must be a number between 0 and 1")
+                score = max(0.0, min(1.0, float(score)))
+
+                db: Session = next(get_db())
+                try:
+                    # Ensure progress exists
+                    progress = db.query(UserTopicProgress).filter(
+                        UserTopicProgress.user_contest_id == session.user_contest_id,
+                        UserTopicProgress.programmatic_content_id == session.topic_id,
+                    ).first()
+                    if not progress:
+                        progress = UserTopicProgress(
+                            user_contest_id=session.user_contest_id,
+                            programmatic_content_id=session.topic_id,
+                            current_proficiency_score=0.3,
+                            sessions_studied=0,
+                        )
+                        db.add(progress)
+                        db.commit()
+                        db.refresh(progress)
+
+                    old = progress.current_proficiency_score or 0.0
+                    new = 0.7 * old + 0.3 * score
+                    new = max(0.0, min(1.0, new))
+
+                    progress.current_proficiency_score = new
+                    progress.sessions_studied = (progress.sessions_studied or 0) + 1
+                    progress.last_studied_at = datetime.utcnow()
+
+                    # spaced repetition window
+                    if score >= 0.8:
+                        days = 7
+                    elif score >= 0.6:
+                        days = 3
+                    else:
+                        days = 1
+                    progress.next_review_at = datetime.utcnow() + timedelta(days=days)
+
+                    db.commit()
+                except Exception as e:
+                    db.rollback()
+                    self.logger.error("Failed to update topic progress", chat_id=chat_id, error=str(e))
+                    raise HTTPException(status_code=500, detail="Failed to update topic progress")
+                finally:
+                    db.close()
+
+            # Build summary
+            summary = {
+                "topic_name": session.topic_name,
+                "subject": session.subject,
+                "duration_minutes": (datetime.utcnow() - session.created_at).total_seconds() / 60.0 if session.created_at else None,
+                "message_count": session.message_count,
+                "quiz_score": request.quiz_score,
+            }
+            return ChatCompleteResponse(status="completed", session_summary=summary)
+        except HTTPException:
+            raise
+        except Exception as e:
+            self.logger.error("Failed to complete session", user_id=user_id, chat_id=chat_id, error=str(e))
+            raise HTTPException(status_code=500, detail=f"Failed to complete session: {str(e)}")
 
     async def _validate_and_get_context(self, user_id: int, user_contest_id: int, topic_id: int) -> Dict[str, Any]:
         db: Session = next(get_db())

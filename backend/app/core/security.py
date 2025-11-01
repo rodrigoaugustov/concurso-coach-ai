@@ -1,10 +1,10 @@
-# backend/app/core/security.py
-
 from __future__ import annotations
 from typing import Optional
 import re
 import html
 import os
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 try:
     import magic  # python-magic
@@ -75,3 +75,25 @@ class InputValidator:
         except Exception:
             return False
         return min_value <= ivalue <= max_value
+
+
+# --- Minimal auth dependency for routers ---
+security = HTTPBearer(auto_error=False)
+
+class AuthUser:
+    def __init__(self, id: int):
+        self.id = id
+
+
+def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> AuthUser:
+    """
+    Minimal placeholder auth dependency returning a fake user when Authorization header is present.
+    Replace with real JWT validation as needed.
+    """
+    if credentials is None or not credentials.credentials:
+        # For development we can allow anonymous user id=1
+        # raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+        return AuthUser(id=1)
+
+    # TODO: validate JWT properly and extract user id
+    return AuthUser(id=1)

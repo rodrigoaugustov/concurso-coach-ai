@@ -1,5 +1,6 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from app.core.database import engine
 from app import models
 from app.users.router import router as users_router
@@ -29,11 +30,13 @@ logger = get_logger("main")
 try:
     from slowapi import Limiter
     from slowapi.util import get_remote_address
+    from slowapi.errors import RateLimitExceeded
     limiter = Limiter(key_func=get_remote_address)
     USE_RATE_LIMIT = True
     logger.info("Rate limiting enabled")
 except Exception as e:
     limiter = None
+    RateLimitExceeded = None
     USE_RATE_LIMIT = False
     logger.warning("Rate limiting disabled", error=str(e))
 
@@ -75,6 +78,21 @@ app.add_middleware(SecurityHeadersMiddleware)
 logger.info("Configuring exception handlers")
 app.add_exception_handler(CoachAIException, coach_ai_exception_handler)
 app.add_exception_handler(RequestValidationError, validation_exception_handler)
+
+# Global rate-limit handler (Solution A)
+if USE_RATE_LIMIT and RateLimitExceeded is not None:
+    @app.exception_handler(RateLimitExceeded)
+    async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
+        logger.warning(
+            "Rate limit exceeded",
+            endpoint=str(request.url),
+            user_agent=request.headers.get("user-agent"),
+            remote_addr=request.client.host if request.client else None
+        )
+        return JSONResponse(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            content={"detail": f"Rate limit exceeded: {exc.detail}"},
+        )
 
 # Inclui os roteadores das diferentes partes da aplicação
 logger.info("Registering API routers")

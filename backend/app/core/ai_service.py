@@ -1,6 +1,6 @@
 """
 Refactored AI Service - LangChain-first approach with factory pattern.
-Provides cached chains, async helpers, and structured output with auto-correction.
+Provides cached chains, async helpers, and structured output.
 """
 
 from typing import Dict, List, Type, Any, Optional, AsyncGenerator
@@ -8,8 +8,6 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import Runnable
 from langchain_core.messages import HumanMessage, BaseMessage
-from langchain_core.output_parsers import PydanticOutputParser
-from langchain.output_parsers import RetryWithErrorOutputParser
 from pydantic import BaseModel
 from .logging import get_logger
 from .prompt_templates import prompt_factory
@@ -21,7 +19,7 @@ from functools import lru_cache
 class ChainFactory:
     """
     Factory for creating and caching LangChain Runnable chains.
-    Provides centralized chain management with async support and auto-correction.
+    Provides centralized chain management with async support.
     """
     
     def __init__(self, provider: str, api_key: str, model_name: str, temperature: float = 0.2):
@@ -57,8 +55,7 @@ class ChainFactory:
     def get_structured_chain(
         self, 
         template_name: str, 
-        response_schema: Type[BaseModel],
-        use_retry: bool = False  # Disabled by default due to import issues
+        response_schema: Type[BaseModel]
     ) -> Runnable:
         """
         Get or create a cached structured output chain.
@@ -66,36 +63,18 @@ class ChainFactory:
         Args:
             template_name: Name of the prompt template
             response_schema: Pydantic model for structured output
-            use_retry: Whether to use RetryWithErrorOutputParser for auto-correction
         
         Returns:
             Cached Runnable chain
         """
-        cache_key = f"{template_name}_{response_schema.__name__}_{use_retry}"
+        cache_key = f"{template_name}_{response_schema.__name__}"
         
         if cache_key not in self._chain_cache:
             prompt = prompt_factory.get_template(template_name)
             
-            if use_retry:
-                try:
-                    # Auto-correction chain with RetryWithErrorOutputParser
-                    parser = PydanticOutputParser(pydantic_object=response_schema)
-                    retry_parser = RetryWithErrorOutputParser.from_llm(
-                        parser=parser, 
-                        llm=self.llm
-                    )
-                    chain = prompt | self.llm | retry_parser
-                except ImportError:
-                    self.logger.warning(
-                        "RetryWithErrorOutputParser not available, falling back to simple structured output",
-                        template_name=template_name
-                    )
-                    structured_llm = self.llm.with_structured_output(response_schema)
-                    chain = prompt | structured_llm
-            else:
-                # Simple structured output
-                structured_llm = self.llm.with_structured_output(response_schema)
-                chain = prompt | structured_llm
+            # Use simple structured output with native LangChain support
+            structured_llm = self.llm.with_structured_output(response_schema)
+            chain = prompt | structured_llm
             
             self._chain_cache[cache_key] = chain
             
@@ -103,7 +82,6 @@ class ChainFactory:
                 "Created and cached new chain",
                 template_name=template_name,
                 schema=response_schema.__name__,
-                use_retry=use_retry,
                 cache_key=cache_key
             )
         
@@ -167,7 +145,7 @@ class ChainFactory:
         response_schema: Type[BaseModel]
     ) -> BaseModel:
         """
-        Async invoke with structured output and auto-correction.
+        Async invoke with structured output.
         
         Args:
             template_name: Name of the prompt template

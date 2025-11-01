@@ -48,7 +48,8 @@ class GuidedLearningAgents:
             "proficiency": int(session_context["proficiency"] * 10),
             "banca": session_context.get("banca", "Não especificada"),
             "supervisor_instructions": f"Responda como agente {agent} sobre '{user_message}'",
-            "messages": self._format_history(message_history + [HumanMessage(content=user_message)]),
+            # IMPORTANT: pass list[BaseMessage] to MessagesPlaceholder
+            "messages": message_history + [HumanMessage(content=user_message)],
         }
         template = f"{agent}_agent"
         resp = await self.chain_factory.ainvoke(template, ctx, AgentResponse)
@@ -65,6 +66,7 @@ class GuidedLearningAgents:
         return AssistantMessage(content=resp.content, ui_kind=resp.ui_kind, agent=resp.agent, suggestions=resp.suggestions)
 
     def _format_history(self, messages: List[BaseMessage]) -> str:
+        # Kept for potential logging/debugging usage
         if not messages:
             return ""
         out = []

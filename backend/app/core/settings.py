@@ -25,5 +25,19 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
     LOG_FORMAT: str = "json"  # "json" para produção, "console" para desenvolvimento
     ENVIRONMENT: str = "development"  # "development" ou "production"
+    
+    @property
+    def database_url(self) -> str:
+        """Get database URL for external libraries."""
+        return self.DATABASE_URL
+    
+    @property
+    def gemini_api_key(self) -> str:
+        """Get Gemini API key for AI services."""
+        return self.GEMINI_API_KEY
 
 settings = Settings()
+
+def get_settings() -> Settings:
+    """Get global settings instance."""
+    return settings

@@ -6,6 +6,7 @@ Orchestrates multi-agents, persistence, streaming, and session management.
 from typing import Dict, List, Any, Optional, AsyncGenerator
 from fastapi import HTTPException
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
+from sqlalchemy.orm import Session
 import asyncio
 import json
 from datetime import datetime
@@ -13,6 +14,9 @@ from datetime import datetime
 from ..core.ai_service import ChainFactory
 from ..core.logging import get_logger
 from ..core.settings import get_settings
+from ..core.database import get_db
+from ..users.models import UserContest, UserTopicProgress
+from ..contests.models import ProgrammaticContent, ContestRole
 from .guided_learning_agents import GuidedLearningAgents
 from .guided_learning_persistence import get_guided_learning_persistence
 from .guided_learning_schemas import (
@@ -38,7 +42,7 @@ class GuidedLearningService:
     Main service for guided learning chat functionality.
     Coordinates agents, persistence, streaming, and business logic.
     """
-    
+
     def __init__(self):
         self.logger = get_logger("guided_learning_service")
         self.settings = get_settings()
@@ -406,8 +410,13 @@ class GuidedLearningService:
             if not success:
                 raise HTTPException(status_code=500, detail="Failed to complete session")
             
-            # TODO: Schedule spaced repetition and update progress
-            # This would integrate with existing study services
+            # Update user topic progress if quiz score provided
+            if request.quiz_score is not None:
+                await self._update_topic_progress(
+                    session.user_contest_id,
+                    session.topic_id,
+                    request.quiz_score
+                )
             
             session_summary = {
                 "topic_name": session.topic_name,
@@ -534,7 +543,7 @@ class GuidedLearningService:
         Args:
             user_id: User ID
             user_contest_id: User contest ID
-            topic_id: Topic ID
+            topic_id: Topic ID (ProgrammaticContent.id)
         
         Returns:
             Session context dictionary
@@ -542,19 +551,161 @@ class GuidedLearningService:
         Raises:
             HTTPException: If validation fails
         """
-        # TODO: Implement proper validation with database queries
-        # For now, return mock context
         
-        # In a real implementation, this would:
-        # 1. Verify user owns the user_contest_id
-        # 2. Verify topic_id exists in the contest
-        # 3. Get topic details (name, subject, user proficiency)
+        # Get database session
+        db: Session = next(get_db())
         
-        return {
-            "topic_name": "Direito Constitucional - Princípios Fundamentais",
-            "subject": "Direito Constitucional",
-            "proficiency": 0.6  # User's current proficiency (0.0 to 1.0)
-        }
+        try:
+            # 1. Verify user owns the user_contest_id
+            user_contest = db.query(UserContest).filter(
+                UserContest.id == user_contest_id,
+                UserContest.user_id == user_id
+            ).first()
+            
+            if not user_contest:
+                raise HTTPException(
+                    status_code=404, 
+                    detail="User contest not found or access denied"
+                )
+            
+            # 2. Verify topic_id exists and belongs to this contest
+            topic = db.query(ProgrammaticContent).filter(
+                ProgrammaticContent.id == topic_id,
+                ProgrammaticContent.contest_role_id == user_contest.contest_role_id
+            ).first()
+            
+            if not topic:
+                raise HTTPException(
+                    status_code=404,
+                    detail="Topic not found in this contest"
+                )
+            
+            # 3. Get user's current proficiency for this topic
+            topic_progress = db.query(UserTopicProgress).filter(
+                UserTopicProgress.user_contest_id == user_contest_id,
+                UserTopicProgress.programmatic_content_id == topic_id
+            ).first()
+            
+            # If no progress record exists, create one with default proficiency
+            if not topic_progress:
+                topic_progress = UserTopicProgress(
+                    user_contest_id=user_contest_id,
+                    programmatic_content_id=topic_id,
+                    current_proficiency_score=0.3,  # Default starting proficiency
+                    sessions_studied=0
+                )
+                db.add(topic_progress)
+                db.commit()
+                db.refresh(topic_progress)
+                
+                self.logger.info(
+                    "Created new topic progress record",
+                    user_id=user_id,
+                    topic_id=topic_id,
+                    initial_proficiency=0.3
+                )
+            
+            self.logger.info(
+                "Session context validated",
+                user_id=user_id,
+                user_contest_id=user_contest_id,
+                topic_id=topic_id,
+                topic_name=topic.topic,
+                subject=topic.subject,
+                proficiency=topic_progress.current_proficiency_score
+            )
+            
+            return {
+                "topic_name": topic.topic,
+                "subject": topic.subject,
+                "exam_module": topic.exam_module,
+                "proficiency": topic_progress.current_proficiency_score,
+                "sessions_studied": topic_progress.sessions_studied
+            }
+            
+        except HTTPException:
+            raise
+        except Exception as e:
+            self.logger.error(
+                "Session context validation failed",
+                user_id=user_id,
+                user_contest_id=user_contest_id,
+                topic_id=topic_id,
+                error=str(e)
+            )
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to validate session context"
+            )
+        finally:
+            db.close()
+    
+    async def _update_topic_progress(
+        self,
+        user_contest_id: int,
+        topic_id: int,
+        quiz_score: float
+    ) -> None:
+        """
+        Update user's topic progress based on quiz performance.
+        
+        Args:
+            user_contest_id: User contest ID
+            topic_id: Topic ID
+            quiz_score: Quiz score (0.0 to 1.0)
+        """
+        db: Session = next(get_db())
+        
+        try:
+            # Get existing progress
+            progress = db.query(UserTopicProgress).filter(
+                UserTopicProgress.user_contest_id == user_contest_id,
+                UserTopicProgress.programmatic_content_id == topic_id
+            ).first()
+            
+            if progress:
+                # Update proficiency using weighted average
+                # New proficiency = 70% old + 30% quiz score
+                new_proficiency = (0.7 * progress.current_proficiency_score) + (0.3 * quiz_score)
+                new_proficiency = max(0.0, min(1.0, new_proficiency))  # Clamp to [0, 1]
+                
+                progress.current_proficiency_score = new_proficiency
+                progress.sessions_studied += 1
+                progress.last_studied_at = datetime.utcnow()
+                
+                # Schedule next review (simple spaced repetition)
+                if quiz_score >= 0.8:  # Good performance
+                    next_review_days = 7
+                elif quiz_score >= 0.6:  # Average performance  
+                    next_review_days = 3
+                else:  # Poor performance
+                    next_review_days = 1
+                
+                from datetime import timedelta
+                progress.next_review_at = datetime.utcnow() + timedelta(days=next_review_days)
+                
+                db.commit()
+                
+                self.logger.info(
+                    "Topic progress updated",
+                    user_contest_id=user_contest_id,
+                    topic_id=topic_id,
+                    old_proficiency=progress.current_proficiency_score,
+                    new_proficiency=new_proficiency,
+                    quiz_score=quiz_score,
+                    next_review_days=next_review_days
+                )
+                
+        except Exception as e:
+            self.logger.error(
+                "Failed to update topic progress",
+                user_contest_id=user_contest_id,
+                topic_id=topic_id,
+                error=str(e)
+            )
+            db.rollback()
+        finally:
+            db.close()
 
 
 # Global service instance

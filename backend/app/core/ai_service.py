@@ -9,7 +9,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import Runnable
 from langchain_core.messages import HumanMessage, BaseMessage
 from langchain_core.output_parsers import PydanticOutputParser
-from langchain_core.output_parsers.retry import RetryWithErrorOutputParser
+from langchain.output_parsers import RetryWithErrorOutputParser
 from pydantic import BaseModel
 from .logging import get_logger
 from .prompt_templates import prompt_factory
@@ -58,7 +58,7 @@ class ChainFactory:
         self, 
         template_name: str, 
         response_schema: Type[BaseModel],
-        use_retry: bool = True
+        use_retry: bool = False  # Disabled by default due to import issues
     ) -> Runnable:
         """
         Get or create a cached structured output chain.
@@ -77,13 +77,21 @@ class ChainFactory:
             prompt = prompt_factory.get_template(template_name)
             
             if use_retry:
-                # Auto-correction chain with RetryWithErrorOutputParser
-                parser = PydanticOutputParser(pydantic_object=response_schema)
-                retry_parser = RetryWithErrorOutputParser.from_llm(
-                    parser=parser, 
-                    llm=self.llm
-                )
-                chain = prompt | self.llm | retry_parser
+                try:
+                    # Auto-correction chain with RetryWithErrorOutputParser
+                    parser = PydanticOutputParser(pydantic_object=response_schema)
+                    retry_parser = RetryWithErrorOutputParser.from_llm(
+                        parser=parser, 
+                        llm=self.llm
+                    )
+                    chain = prompt | self.llm | retry_parser
+                except ImportError:
+                    self.logger.warning(
+                        "RetryWithErrorOutputParser not available, falling back to simple structured output",
+                        template_name=template_name
+                    )
+                    structured_llm = self.llm.with_structured_output(response_schema)
+                    chain = prompt | structured_llm
             else:
                 # Simple structured output
                 structured_llm = self.llm.with_structured_output(response_schema)

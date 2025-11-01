@@ -51,7 +51,7 @@ class GuidedLearningService:
         self.chain_factory = ChainFactory(
             provider="google",
             api_key=self.settings.gemini_api_key,
-            model_name="gemini-1.5-flash",
+            model_name="gemini-2.5-flash",
             temperature=0.3
         )
         
@@ -257,7 +257,7 @@ class GuidedLearningService:
             self.logger.info("Real streaming session completed", chat_id=chat_id, agent=agent_type, content_length=len(accumulated_content))
         except Exception as e:
             self.logger.error("Streaming session failed", user_id=user_id, chat_id=chat_id, error=str(e))
-            yield f"data: {ErrorEvent(error=str(e), error_code="PROCESSING_ERROR").json()}\n\n"
+            yield f"data: {ErrorEvent(error=str(e), error_code='PROCESSING_ERROR').json()}\n\n"
     
     def _simple_route(self, message: str) -> str:
         text = message.lower()

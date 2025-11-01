@@ -18,22 +18,17 @@ from .guided_learning_schemas import (
 
 # Rate limiting setup
 try:
-    from slowapi import Limiter, _rate_limit_exceeded_handler
+    from slowapi import Limiter
     from slowapi.util import get_remote_address
-    from slowapi.errors import RateLimitExceeded
-    from slowapi.middleware import SlowAPIMiddleware
     
     def get_user_id_for_rate_limit(request: Request):
         """Get user ID for rate limiting continue endpoints."""
         try:
-            # Try to get user from dependencies (if already resolved)
             user = getattr(request.state, 'current_user', None)
             if user:
                 return f"user_{user.id}"
-        except:
+        except Exception:
             pass
-        
-        # Fallback to IP for anonymous requests
         return get_remote_address(request)
     
     limiter = Limiter(key_func=get_remote_address)
@@ -45,7 +40,6 @@ except ImportError:
 router = APIRouter(prefix="/api/v1/study/sessions", tags=["Guided Learning Sessions"])
 logger = get_logger("guided_learning_router")
 
-# Add rate limiter to FastAPI app if available
 if RATE_LIMIT_AVAILABLE:
     logger.info("Rate limiting enabled for guided learning endpoints")
 else:
@@ -54,7 +48,7 @@ else:
 
 if RATE_LIMIT_AVAILABLE:
     @router.post("/start")
-    @limiter.limit("5/minute")  # 5 starts per minute per IP
+    @limiter.limit("5/minute")
     async def start_session(
         request: Request,
         request_body: ChatStartRequest, 
@@ -76,7 +70,7 @@ else:
 
 if RATE_LIMIT_AVAILABLE:
     @router.post("/{chat_id}/continue")
-    @limiter.limit("30/minute", key_func=get_user_id_for_rate_limit)  # 30 continues per minute per user
+    @limiter.limit("30/minute", key_func=get_user_id_for_rate_limit)
     async def continue_session(
         request: Request,
         chat_id: str, 
@@ -100,7 +94,7 @@ else:
 
 if RATE_LIMIT_AVAILABLE:
     @router.post("/{chat_id}/continue/stream")
-    @limiter.limit("20/minute", key_func=get_user_id_for_rate_limit)  # 20 stream requests per minute per user
+    @limiter.limit("20/minute", key_func=get_user_id_for_rate_limit)
     async def continue_session_stream(
         request: Request,
         chat_id: str, 
@@ -109,11 +103,11 @@ if RATE_LIMIT_AVAILABLE:
     ):
         """Continue a chat session with streaming response (SSE)."""
         service = get_guided_learning_service()
-        
+
         async def event_generator() -> AsyncGenerator[str, None]:
             async for event in service.continue_session_stream(current_user.id, chat_id, request_body):
                 yield event
-        
+
         return StreamingResponse(
             event_generator(), 
             media_type="text/event-stream",
@@ -133,11 +127,11 @@ else:
     ):
         """Continue a chat session with streaming response (SSE)."""
         service = get_guided_learning_service()
-        
+
         async def event_generator() -> AsyncGenerator[str, None]:
             async for event in service.continue_session_stream(current_user.id, chat_id, request_body):
                 yield event
-        
+
         return StreamingResponse(
             event_generator(), 
             media_type="text/event-stream",
@@ -169,20 +163,3 @@ async def get_history(
     """Get chat session history and metadata."""
     service = get_guided_learning_service()
     return await service.get_session_history(current_user.id, chat_id)
-
-
-# Add rate limit error handler if available
-if RATE_LIMIT_AVAILABLE:
-    @router.exception_handler(RateLimitExceeded)
-    async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
-        response = HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=f"Rate limit exceeded: {exc.detail}"
-        )
-        logger.warning(
-            "Rate limit exceeded",
-            endpoint=request.url.path,
-            user_agent=request.headers.get("user-agent"),
-            remote_addr=get_remote_address(request)
-        )
-        return response

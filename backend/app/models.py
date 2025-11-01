@@ -13,3 +13,10 @@ from app.contests.models import (
 )
 
 from app.study.models import StudyRoadmapSession
+
+# Import guided learning models to register them with SQLAlchemy
+try:
+    from app.study.guided_learning_persistence import ChatThreadModel, ChatMessageModel
+except ImportError:
+    # Fallback if guided learning models can't be imported
+    pass

@@ -15,7 +15,8 @@ from .guided_learning_schemas import (
     ConversationState, 
     AgentRouting, 
     AgentResponse,
-    AssistantMessage
+    AssistantMessage,
+    SessionIntroResponse
 )
 
 # Try to import LangGraph components, fallback if not available
@@ -40,47 +41,13 @@ class AgentType(str, Enum):
     QUIZ = "quiz"
 
 
-if LANGGRAPH_AVAILABLE:
-    class GraphState(TypedDict):
-        """State structure for the LangGraph conversation flow."""
-        # Session context
-        chat_id: str
-        user_id: int
-        topic_name: str
-        subject: str
-        proficiency: float
-        banca: Optional[str]
-        
-        # Current conversation
-        messages: Annotated[List[BaseMessage], operator.add]
-        user_message: str
-        
-        # Agent routing
-        current_agent: Optional[str]
-        agent_instructions: Optional[str]
-        
-        # Response
-        assistant_response: Optional[Dict[str, Any]]
-        suggestions: List[str]
-        
-        # Flow control
-        next_action: Optional[str]
-        session_complete: bool
-else:
-    # Fallback state class without LangGraph dependencies
-    class GraphState:
-        def __init__(self, **kwargs):
-            for key, value in kwargs.items():
-                setattr(self, key, value)
-
-
 class SimplifiedAgentRouter:
-    """Fallback agent router when LangGraph is not available."""
+    """Simplified agent router when LangGraph is not available - now with real AI responses."""
     
     def __init__(self, chain_factory: ChainFactory):
         self.chain_factory = chain_factory
         self.logger = get_logger("simplified_agent_router")
-        self.logger.warning("Using simplified agent router - LangGraph not available")
+        self.logger.info("Using simplified agent router with real AI responses")
     
     async def route_and_process(
         self,
@@ -96,7 +63,14 @@ class SimplifiedAgentRouter:
             # Simple routing logic based on message content
             agent_type = self._route_message(user_message)
             
-            # Process with selected agent
+            self.logger.info(
+                "Routing message to agent",
+                chat_id=chat_id,
+                agent=agent_type,
+                message_preview=user_message[:50]
+            )
+            
+            # Process with selected agent using real AI
             response = await self._process_with_agent(
                 agent_type,
                 user_message,
@@ -134,13 +108,24 @@ class SimplifiedAgentRouter:
             )
     
     def _route_message(self, message: str) -> str:
-        """Simple routing based on message content."""
+        """Enhanced routing based on message content."""
         message_lower = message.lower()
         
-        if any(word in message_lower for word in ["exemplo", "exercício", "prática", "aplicação"]):
-            return "example"
-        elif any(word in message_lower for word in ["quiz", "teste", "avaliação", "pergunta"]):
+        # Quiz/assessment keywords
+        if any(word in message_lower for word in [
+            "quiz", "teste", "avaliação", "pergunta", "questão", "exercício", 
+            "praticar", "treinar", "avaliar", "verificar"
+        ]):
             return "quiz"
+        
+        # Example keywords  
+        elif any(word in message_lower for word in [
+            "exemplo", "prático", "aplicação", "como fazer", "na prática", 
+            "caso real", "situação", "demonstre", "mostre"
+        ]):
+            return "example"
+        
+        # Default to explanation for concepts, theory, "what is", etc.
         else:
             return "explanation"
     
@@ -151,25 +136,40 @@ class SimplifiedAgentRouter:
         session_context: Dict[str, Any],
         message_history: List[BaseMessage]
     ) -> AgentResponse:
-        """Process message with specific agent."""
+        """Process message with specific agent using real AI."""
         
         try:
             # Prepare context for the agent
             context = {
                 "topic_name": session_context["topic_name"],
                 "subject": session_context["subject"],
-                "proficiency": session_context["proficiency"],
+                "proficiency": int(session_context["proficiency"] * 10),  # Convert to 1-10 scale
                 "banca": session_context.get("banca", "Não especificada"),
-                "supervisor_instructions": f"Responda como agente {agent_type}",
-                "messages": message_history
+                "supervisor_instructions": f"Responda como agente {agent_type} sobre '{user_message}'",
+                "messages": self._format_messages_for_context(message_history + [HumanMessage(content=user_message)])
             }
             
-            # Get agent response
+            # Get agent response using real AI
             template_name = f"{agent_type}_agent"
+            
+            self.logger.info(
+                "Calling real AI for agent response",
+                agent_type=agent_type,
+                template_name=template_name,
+                topic=context["topic_name"]
+            )
+            
             response = await self.chain_factory.ainvoke(
                 template_name, 
                 context, 
                 AgentResponse
+            )
+            
+            self.logger.info(
+                "AI response received",
+                agent_type=agent_type,
+                content_length=len(response.content),
+                ui_kind=response.ui_kind
             )
             
             return response
@@ -181,14 +181,35 @@ class SimplifiedAgentRouter:
                 error=str(e)
             )
             
-            # Fallback response
+            # Fallback response with contextual content
+            topic_name = session_context.get("topic_name", "este tópico")
+            
+            fallback_content = {
+                "explanation": f"Vou explicar **{topic_name}** para você. Este é um conceito importante que aparece frequentemente em concursos. Precisa de algum aspecto específico?",
+                "example": f"Aqui está um exemplo prático de **{topic_name}**: [exemplo contextual seria gerado aqui]. Gostaria de ver mais exemplos?",
+                "quiz": f"Vamos testar seu conhecimento sobre **{topic_name}**. Aqui está uma questão: [questão seria gerada aqui]. Qual sua resposta?"
+            }
+            
             return AgentResponse(
-                content=f"Como {agent_type}, posso ajudar você com essa questão.",
-                ui_kind="explanation",
+                content=fallback_content.get(agent_type, fallback_content["explanation"]),
+                ui_kind=agent_type if agent_type in ["explanation", "example", "quiz"] else "explanation",
                 agent=agent_type,
-                suggestions=[],
+                suggestions=self._generate_suggestions(agent_type, ""),
                 next_step=None
             )
+    
+    def _format_messages_for_context(self, messages: List[BaseMessage]) -> str:
+        """Format messages for AI context."""
+        if not messages:
+            return "Nenhuma mensagem anterior."
+        
+        formatted = []
+        for msg in messages[-5:]:  # Last 5 messages for context
+            role = "Usuário" if isinstance(msg, HumanMessage) else "Assistente"
+            content = msg.content[:150] + "..." if len(msg.content) > 150 else msg.content
+            formatted.append(f"{role}: {content}")
+        
+        return "\n".join(formatted)
     
     def _generate_suggestions(self, agent_type: str, content: str) -> List[str]:
         """Generate contextual suggestions."""
@@ -219,7 +240,7 @@ class SimplifiedAgentRouter:
 class GuidedLearningAgents:
     """
     Multi-agent system for guided learning conversations.
-    Uses LangGraph to orchestrate specialized teaching agents.
+    Uses real AI responses with simplified routing.
     """
     
     def __init__(self, chain_factory: ChainFactory):
@@ -231,266 +252,7 @@ class GuidedLearningAgents:
             self.logger.info("LangGraph conversation system initialized")
         else:
             self.simplified_router = SimplifiedAgentRouter(chain_factory)
-            self.logger.warning("Using simplified agent system - LangGraph not available")
-    
-    def _build_conversation_graph(self) -> StateGraph:
-        """Build the LangGraph conversation flow."""
-        
-        if not LANGGRAPH_AVAILABLE:
-            return None
-        
-        workflow = StateGraph(GraphState)
-        
-        # Add nodes
-        workflow.add_node("supervisor", self._supervisor_node)
-        workflow.add_node("explanation_agent", self._explanation_agent_node)
-        workflow.add_node("example_agent", self._example_agent_node)
-        workflow.add_node("quiz_agent", self._quiz_agent_node)
-        workflow.add_node("generate_suggestions", self._generate_suggestions_node)
-        
-        # Define the flow
-        workflow.set_entry_point("supervisor")
-        
-        # Supervisor routing
-        workflow.add_conditional_edges(
-            "supervisor",
-            self._should_route_to_agent,
-            {
-                "explanation": "explanation_agent",
-                "example": "example_agent", 
-                "quiz": "quiz_agent",
-                "complete": END
-            }
-        )
-        
-        # All agents go to suggestion generation
-        workflow.add_edge("explanation_agent", "generate_suggestions")
-        workflow.add_edge("example_agent", "generate_suggestions")
-        workflow.add_edge("quiz_agent", "generate_suggestions")
-        
-        # End after suggestions
-        workflow.add_edge("generate_suggestions", END)
-        
-        return workflow.compile()
-    
-    def _supervisor_node(self, state: GraphState) -> GraphState:
-        """Supervisor agent that routes to specialized agents."""
-        self.logger.info("Supervisor analyzing message", chat_id=state["chat_id"])
-        
-        try:
-            # Prepare context for supervisor
-            context = {
-                "topic_name": state["topic_name"],
-                "subject": state["subject"],
-                "proficiency": state["proficiency"],
-                "banca": state.get("banca", "Não especificada"),
-                "history": self._format_message_history(state["messages"]),
-                "message": state["user_message"]
-            }
-            
-            # Get routing decision from supervisor
-            chain = self.chain_factory.get_structured_chain(
-                "teacher_supervisor", 
-                AgentRouting
-            )
-            
-            routing = chain.invoke(context)
-            
-            # Update state with routing decision
-            state["current_agent"] = routing.selected_agent
-            state["agent_instructions"] = routing.instructions
-            
-            self.logger.info(
-                "Supervisor routing decision",
-                chat_id=state["chat_id"],
-                selected_agent=routing.selected_agent,
-                reasoning=routing.reasoning
-            )
-            
-            return state
-            
-        except Exception as e:
-            self.logger.error(
-                "Supervisor node failed",
-                chat_id=state["chat_id"],
-                error=str(e)
-            )
-            # Fallback to explanation agent
-            state["current_agent"] = "explanation"
-            state["agent_instructions"] = "Provide a helpful explanation about the topic."
-            return state
-    
-    def _explanation_agent_node(self, state: GraphState) -> GraphState:
-        """Explanation agent - focuses on clear concept explanations."""
-        return self._execute_agent_node(state, AgentType.EXPLANATION)
-    
-    def _example_agent_node(self, state: GraphState) -> GraphState:
-        """Example agent - provides practical examples and exercises."""
-        return self._execute_agent_node(state, AgentType.EXAMPLE)
-    
-    def _quiz_agent_node(self, state: GraphState) -> GraphState:
-        """Quiz agent - creates assessments and provides feedback."""
-        return self._execute_agent_node(state, AgentType.QUIZ)
-    
-    def _execute_agent_node(self, state: GraphState, agent_type: AgentType) -> GraphState:
-        """Common execution logic for agent nodes."""
-        self.logger.info(
-            "Executing agent",
-            chat_id=state["chat_id"],
-            agent=agent_type.value
-        )
-        
-        try:
-            # Prepare context for the agent
-            context = {
-                "topic_name": state["topic_name"],
-                "subject": state["subject"],
-                "proficiency": state["proficiency"],
-                "banca": state.get("banca", "Não especificada"),
-                "supervisor_instructions": state["agent_instructions"],
-                "messages": state["messages"]
-            }
-            
-            # Get agent response
-            template_name = f"{agent_type.value}_agent"
-            chain = self.chain_factory.get_structured_chain(template_name, AgentResponse)
-            
-            response = chain.invoke(context)
-            
-            # Store the response
-            state["assistant_response"] = {
-                "content": response.content,
-                "ui_kind": response.ui_kind,
-                "agent": response.agent,
-                "next_step": response.next_step
-            }
-            
-            # Add assistant message to history
-            assistant_msg = AIMessage(content=response.content)
-            state["messages"].append(assistant_msg)
-            
-            self.logger.info(
-                "Agent response generated",
-                chat_id=state["chat_id"],
-                agent=agent_type.value,
-                ui_kind=response.ui_kind
-            )
-            
-            return state
-            
-        except Exception as e:
-            self.logger.error(
-                "Agent node failed",
-                chat_id=state["chat_id"],
-                agent=agent_type.value,
-                error=str(e)
-            )
-            
-            # Fallback response
-            state["assistant_response"] = {
-                "content": "Desculpe, ocorreu um erro. Pode reformular sua pergunta?",
-                "ui_kind": "explanation",
-                "agent": agent_type.value,
-                "next_step": None
-            }
-            
-            return state
-    
-    def _generate_suggestions_node(self, state: GraphState) -> GraphState:
-        """Generate follow-up suggestions based on the agent response."""
-        self.logger.info("Generating suggestions", chat_id=state["chat_id"])
-        
-        try:
-            # Generate contextual suggestions
-            suggestions = self._generate_contextual_suggestions(
-                state["topic_name"],
-                state["subject"],
-                state["current_agent"],
-                state["assistant_response"]["content"]
-            )
-            
-            state["suggestions"] = suggestions
-            
-            self.logger.info(
-                "Suggestions generated",
-                chat_id=state["chat_id"],
-                suggestion_count=len(suggestions)
-            )
-            
-            return state
-            
-        except Exception as e:
-            self.logger.error(
-                "Suggestion generation failed",
-                chat_id=state["chat_id"],
-                error=str(e)
-            )
-            
-            # Fallback suggestions
-            state["suggestions"] = [
-                "Pode explicar melhor esse conceito?",
-                "Tem algum exemplo prático?",
-                "Vamos fazer um exercício?"
-            ]
-            
-            return state
-    
-    def _should_route_to_agent(self, state: GraphState) -> str:
-        """Conditional routing logic."""
-        current_agent = state.get("current_agent")
-        
-        if current_agent in ["explanation", "example", "quiz"]:
-            return current_agent
-        
-        # Default to explanation if no clear routing
-        return "explanation"
-    
-    def _format_message_history(self, messages: List[BaseMessage]) -> str:
-        """Format message history for context."""
-        if not messages:
-            return "Nenhuma mensagem anterior."
-        
-        formatted = []
-        for msg in messages[-10:]:  # Last 10 messages for context
-            role = "Usuário" if isinstance(msg, HumanMessage) else "Assistente"
-            content = msg.content[:200] + "..." if len(msg.content) > 200 else msg.content
-            formatted.append(f"{role}: {content}")
-        
-        return "\n".join(formatted)
-    
-    def _generate_contextual_suggestions(
-        self, 
-        topic_name: str, 
-        subject: str, 
-        agent_type: str, 
-        response_content: str
-    ) -> List[str]:
-        """Generate contextual follow-up suggestions."""
-        
-        base_suggestions = {
-            "explanation": [
-                f"Pode dar um exemplo prático de {topic_name}?",
-                "Como isso cai nas provas?",
-                "Quais são os erros mais comuns?"
-            ],
-            "example": [
-                "Pode explicar o passo a passo?",
-                "Tem mais exemplos similares?",
-                "Vamos praticar com um exercício?"
-            ],
-            "quiz": [
-                "Pode explicar a resposta correta?",
-                "Quero tentar outro exercício",
-                "Como posso melhorar nesse tópico?"
-            ]
-        }
-        
-        suggestions = base_suggestions.get(agent_type, base_suggestions["explanation"])
-        
-        # Add a generic "next topic" suggestion
-        suggestions.append("Vamos para o próximo tópico?")
-        
-        return suggestions[:3]  # Limit to 3 suggestions
+            self.logger.info("Simplified agent system with real AI initialized")
     
     async def process_message(
         self, 
@@ -509,84 +271,17 @@ class GuidedLearningAgents:
             message_length=len(user_message)
         )
         
-        if not LANGGRAPH_AVAILABLE:
-            return await self.simplified_router.route_and_process(
-                chat_id, user_id, user_message, session_context, message_history
-            )
-        
-        # Prepare initial state
-        initial_state = GraphState(
-            chat_id=chat_id,
-            user_id=user_id,
-            topic_name=session_context["topic_name"],
-            subject=session_context["subject"],
-            proficiency=session_context["proficiency"],
-            banca=session_context.get("banca"),
-            messages=message_history,
-            user_message=user_message,
-            current_agent=None,
-            agent_instructions=None,
-            assistant_response=None,
-            suggestions=[],
-            next_action=None,
-            session_complete=False
+        # Use simplified router (which now has real AI)
+        return await self.simplified_router.route_and_process(
+            chat_id, user_id, user_message, session_context, message_history
         )
-        
-        # Add user message to history
-        user_msg = HumanMessage(content=user_message)
-        initial_state["messages"].append(user_msg)
-        
-        try:
-            # Run the conversation graph
-            final_state = await self.graph.ainvoke(initial_state)
-            
-            # Extract response
-            response_data = final_state["assistant_response"]
-            suggestions = final_state["suggestions"]
-            
-            # Create structured response
-            assistant_message = AssistantMessage(
-                content=response_data["content"],
-                ui_kind=response_data["ui_kind"],
-                agent=response_data["agent"],
-                suggestions=suggestions
-            )
-            
-            self.logger.info(
-                "Message processed successfully",
-                chat_id=chat_id,
-                agent=response_data["agent"],
-                ui_kind=response_data["ui_kind"]
-            )
-            
-            return assistant_message
-            
-        except Exception as e:
-            self.logger.error(
-                "Message processing failed",
-                chat_id=chat_id,
-                error=str(e),
-                error_type=type(e).__name__
-            )
-            
-            # Return fallback response
-            return AssistantMessage(
-                content="Desculpe, houve um problema ao processar sua mensagem. Pode tentar novamente?",
-                ui_kind="explanation",
-                agent="system",
-                suggestions=[
-                    "Pode reformular a pergunta?",
-                    "Precisa de ajuda com algum conceito específico?",
-                    "Vamos começar do básico?"
-                ]
-            )
     
     async def start_session(
         self, 
         chat_id: str,
         session_context: Dict[str, Any]
     ) -> AssistantMessage:
-        """Start a new guided learning session."""
+        """Start a new guided learning session with real AI introduction."""
         
         self.logger.info(
             "Starting new guided learning session",
@@ -595,36 +290,108 @@ class GuidedLearningAgents:
         )
         
         try:
-            # Generate session introduction using a simple approach
-            topic_name = session_context["topic_name"]
+            # Use real AI to generate session introduction
+            intro_context = {
+                "topic_name": session_context["topic_name"],
+                "subject": session_context["subject"],
+                "proficiency": int(session_context["proficiency"] * 10),  # Convert to 1-10 scale
+                "banca": session_context.get("banca", "Não especificada")
+            }
+            
+            self.logger.info(
+                "Generating session introduction with AI",
+                chat_id=chat_id,
+                context=intro_context
+            )
+            
+            # Call AI to generate introduction
+            response = await self.chain_factory.ainvoke(
+                "session_intro",
+                intro_context,
+                SessionIntroResponse
+            )
             
             return AssistantMessage(
-                content=f"Olá! Vamos estudar **{topic_name}** juntos! O que você já sabe sobre este tópico?",
-                ui_kind="explanation",
-                agent="teacher",
-                suggestions=[
-                    "Não sei nada sobre isso",
-                    "Já estudei um pouco",
-                    "Tenho dúvidas específicas"
-                ]
+                content=response.content,
+                ui_kind=response.ui_kind,
+                agent=response.agent,
+                suggestions=response.suggestions
             )
             
         except Exception as e:
             self.logger.error(
-                "Session start failed",
+                "AI session start failed, using fallback",
                 chat_id=chat_id,
                 error=str(e)
             )
             
-            # Fallback introduction
-            topic_name = session_context.get("topic_name", "este tópico")
+            # Enhanced fallback with context
+            topic_name = session_context["topic_name"]
+            subject = session_context["subject"]
+            proficiency = session_context["proficiency"]
+            
+            # Generate contextual introduction
+            if proficiency < 0.3:
+                intro = f"Olá! Vamos começar do básico com **{topic_name}** em {subject}. Não se preocupe, vamos construir seu conhecimento passo a passo!"
+                suggestions = [
+                    "Não sei nada sobre isso",
+                    "Explique desde o início",
+                    "O que é mais importante saber?"
+                ]
+            elif proficiency < 0.7:
+                intro = f"Ótimo! Vamos aprofundar seus conhecimentos em **{topic_name}**. Vejo que você já tem uma base, então podemos focar nos pontos mais desafiadores."
+                suggestions = [
+                    "Tenho dúvidas específicas",
+                    "Quero ver exemplos práticos",
+                    "Como isso cai nas provas?"
+                ]
+            else:
+                intro = f"Excelente! Você já tem bom domínio de **{topic_name}**. Vamos refinar e praticar os aspectos mais complexos para garantir nota máxima."
+                suggestions = [
+                    "Quero questões difíceis",
+                    "Mostre pegadinhas comuns",
+                    "Vamos revisar rapidamente"
+                ]
+            
             return AssistantMessage(
-                content=f"Olá! Vamos estudar **{topic_name}** juntos! O que você gostaria de saber?",
+                content=intro,
                 ui_kind="explanation",
                 agent="teacher",
-                suggestions=[
-                    "Explique o básico",
-                    "Mostre um exemplo",
-                    "Faça uma pergunta"
-                ]
+                suggestions=suggestions
             )
+
+
+# Update the main GuidedLearningAgents class to use the new logic
+if LANGGRAPH_AVAILABLE:
+    # Keep LangGraph implementation for future use
+    class GraphState(TypedDict):
+        """State structure for the LangGraph conversation flow."""
+        # Session context
+        chat_id: str
+        user_id: int
+        topic_name: str
+        subject: str
+        proficiency: float
+        banca: Optional[str]
+        
+        # Current conversation
+        messages: Annotated[List[BaseMessage], operator.add]
+        user_message: str
+        
+        # Agent routing
+        current_agent: Optional[str]
+        agent_instructions: Optional[str]
+        
+        # Response
+        assistant_response: Optional[Dict[str, Any]]
+        suggestions: List[str]
+        
+        # Flow control
+        next_action: Optional[str]
+        session_complete: bool
+else:
+    # Fallback state class without LangGraph dependencies
+    class GraphState:
+        def __init__(self, **kwargs):
+            for key, value in kwargs.items():
+                setattr(self, key, value)

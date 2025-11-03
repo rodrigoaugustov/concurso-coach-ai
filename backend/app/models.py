@@ -13,3 +13,4 @@ from app.contests.models import (
 )
 
 from app.study.models import StudyRoadmapSession
+from app.guided_lesson.models import MessageHistory

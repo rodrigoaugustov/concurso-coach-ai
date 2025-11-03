@@ -2,6 +2,14 @@
 FROM python:3.11-slim as base
 # MUDANÇA: Usaremos /code como nosso diretório de trabalho padrão.
 WORKDIR /code
+
+# Instalar dependências do sistema
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    libpq-dev \
+    gcc \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN pip install --no-cache-dir uv
 
 # ---- Builder Stage ----

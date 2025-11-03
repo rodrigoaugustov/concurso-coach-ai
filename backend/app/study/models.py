@@ -24,6 +24,7 @@ class StudyRoadmapSession(Base):
 
     # RELACIONAMENTOS
     user_contest = relationship("UserContest", back_populates="roadmap_sessions")
+    messages = relationship("MessageHistory", back_populates="session", cascade="all, delete-orphan")
     
     # NOVO RELACIONAMENTO M-p-M: Uma sessão tem muitos tópicos
     topics = relationship(

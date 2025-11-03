@@ -129,6 +129,17 @@ def get_next_study_session(
     return services.get_next_session_for_user(db=db, user=current_user, user_contest_id=user_contest_id)
 
 
+@router.get("/sessions/{session_id}", response_model=schemas.StudySession)
+def get_study_session_by_id(
+    session_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Session = Depends(get_db)
+):
+    _ensure_valid_id(session_id, "session_id")
+    return services.get_session_by_id(db=db, user=current_user, session_id=session_id)
+
+
+
 @router.post("/user-contests/{user_contest_id}/complete-session")
 def complete_session(
     user_contest_id: int,

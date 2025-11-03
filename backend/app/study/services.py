@@ -396,3 +396,22 @@ def get_or_generate_layout(db: Session, user: User, session_id: int):
     db.commit()
     
     return ai_response_obj
+
+
+def get_session_by_id(db: Session, user: User, session_id: int):
+    """
+    Busca uma sessão de estudo específica pelo ID, garantindo que ela pertence ao usuário.
+    """
+    session = db.query(StudyRoadmapSession).options(
+        joinedload(StudyRoadmapSession.topics)
+    ).join(
+        UserContest, StudyRoadmapSession.user_contest_id == UserContest.id
+    ).filter(
+        StudyRoadmapSession.id == session_id,
+        UserContest.user_id == user.id
+    ).first()
+
+    if not session:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Sessão de estudo não encontrada ou não pertence ao usuário.")
+
+    return session

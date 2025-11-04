@@ -56,7 +56,7 @@ class EdictProcessor:
         self.ai_service = LangChainService(
             provider="google",
             api_key=settings.GEMINI_API_KEY,
-            model_name="gemini-2.5-flash",
+            model_name="gemini-2.5-pro",
             temperature=1.0,
         )
         log.info("Setup completed", status=self.contest.status.value)

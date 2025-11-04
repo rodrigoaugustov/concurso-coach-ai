@@ -82,6 +82,7 @@ class EdictProcessor:
         )
         data = resp.dict()
         log.info("Extraction completed", ms=round((time.time()-t0)*1000,2))
+        log.info("Extraction object", data)
         return data
 
     def _refine_data(self, initial: Dict[str, Any], log) -> Dict[str, Any]:

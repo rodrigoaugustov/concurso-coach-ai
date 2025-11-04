@@ -44,7 +44,7 @@ class Contest(BaseModel):
     name: str
     exam_date: Optional[date] = None
     status: ContestStatus
-    file_url: HttpUrl
+    file_url: Optional[HttpUrl] = None
     file_hash: str
     roles: List[ContestRole] = [] # Inclui a lista de cargos aninhados
     

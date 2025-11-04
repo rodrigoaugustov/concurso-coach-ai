@@ -31,9 +31,8 @@ dependencies = [
     "email-validator>=2.2.0",
     "structlog>=24.4.0",
     "python-json-logger>=2.0.7",
-    "langgraph-checkpoint-postgres>=3.0.0",
-    "libpq>=12.20",
-]
+    "langgraph-checkpoint-postgres>=3.0.0"
+    ]
 
 [tool.uv]
 # Você pode configurar o comportamento do uv aqui, se necessário.

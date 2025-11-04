@@ -1,12 +1,14 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
+
 from app.core.database import engine
 from app import models
 from app.users.router import router as users_router
 from app.contests.router import router as contests_router
 from app.study.router import router as study_router
 from app.guided_lesson.router import router as guided_lesson_router
-from fastapi.middleware.cors import CORSMiddleware
 from app.core.exceptions import CoachAIException
 from app.core.exception_handlers import (
     coach_ai_exception_handler,
@@ -51,16 +53,17 @@ app = FastAPI(
 # Lista de origens que têm permissão para fazer requisições à nossa API
 origins = [
     "http://localhost",
-    "http://localhost:3000", # A origem do nosso frontend Next.js em desenvolvimento
+    "http://localhost:3000",  # Desenvolvimento local
+    "https://frontend-production-f6ac.up.railway.app",  # Frontend em produção no Railway
 ]
 
 logger.info("Configuring CORS middleware", allowed_origins=origins)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins, # Permite as origens na lista
-    allow_credentials=True, # Permite cookies (importante para o futuro)
-    allow_methods=["*"],    # Permite todos os métodos (GET, POST, etc.)
-    allow_headers=["*"],    # Permite todos os cabeçalhos
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # Request logging middleware (deve ser adicionado antes de outros middlewares)
@@ -83,10 +86,16 @@ app.include_router(contests_router, prefix="/api/v1/contests", tags=["Contests"]
 app.include_router(study_router, prefix="/api/v1/study", tags=["Study"])
 app.include_router(guided_lesson_router, prefix="/api/v1/guided-lesson", tags=["Guided Lesson"])
 
+# Healthcheck
 @app.get("/health")
 def health_check():
     logger.debug("Health check requested")
     return {"status": "ok"}
+
+# Redireciona raiz para /dashboard
+@app.get("/")
+def root_redirect() -> Response:
+    return RedirectResponse(url="/dashboard", status_code=307)
 
 logger.info(
     "FastAPI application initialized successfully",

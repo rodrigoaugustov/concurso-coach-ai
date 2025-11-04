@@ -105,6 +105,7 @@ export interface StudySession {
     priority_level: string;
     priority_reason: string | null;
     topics: ProgrammaticContent[];
+    guided_lesson_started?: boolean; // Optional for backward compatibility
 }
 
 export interface NextSessionResponse {

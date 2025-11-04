@@ -101,3 +101,14 @@ def handle_chat_message(
     updated_history = crud.get_full_conversation_history(db, session_id=session_id)
     
     return {"agent_response": agent_response_content, "history": updated_history}
+
+@router.get("/{session_id}/history", response_model=list[schemas.MessageHistoryInDB])
+def get_chat_history(
+    session_id: int,
+    db: Session = Depends(get_db),
+    current_user: user_schemas.User = Depends(get_current_user),
+):
+    """Retorna o histórico de mensagens de uma sessão de aula guiada."""
+    # TODO: Add validation to ensure the user has access to this session
+    history = crud.get_full_conversation_history(db, session_id=session_id)
+    return history

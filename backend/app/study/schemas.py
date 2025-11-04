@@ -31,6 +31,7 @@ class StudySession(BaseModel):
     priority_level: str
     priority_reason: Optional[str] = None
     topics: List[ProgrammaticContent]
+    guided_lesson_started: bool = False
 
     class Config:
         from_attributes = True

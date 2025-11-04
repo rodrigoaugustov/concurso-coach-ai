@@ -12,6 +12,7 @@ from app.users.models import AssessmentType, ProficiencyHistory
 from .models import StudyRoadmapSession, roadmap_session_topics
 from .plan_generator import StudyPlanGenerator
 from .prompts import procedural_layout_prompt
+from app.guided_lesson.models import MessageHistory
 from pydantic import TypeAdapter
 
 # --- LÓGICA DE REPETIÇÃO ESPAÇADA ---
@@ -261,6 +262,12 @@ def get_next_session_for_user(db: Session, user: User, user_contest_id: int):
         else:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Parabéns! Você concluiu seu plano de estudos.")
 
+    if next_main_session:
+        next_main_session.guided_lesson_started = db.query(MessageHistory).filter(MessageHistory.session_id == next_main_session.id).first() is not None
+
+    if review_session_obj:
+        review_session_obj.guided_lesson_started = db.query(MessageHistory).filter(MessageHistory.session_id == review_session_obj.id).first() is not None
+
     return {
         "main_session": next_main_session,
         "review_session": review_session_obj
@@ -413,5 +420,10 @@ def get_session_by_id(db: Session, user: User, session_id: int):
 
     if not session:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Sessão de estudo não encontrada ou não pertence ao usuário.")
+
+    # Check if guided lesson has started
+    guided_lesson_started = db.query(MessageHistory).filter(MessageHistory.session_id == session_id).first() is not None
+    
+    session.guided_lesson_started = guided_lesson_started
 
     return session

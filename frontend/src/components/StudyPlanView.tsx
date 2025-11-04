@@ -1,6 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { Button } from './ui/Button';
 import type { NextSessionResponse } from '@/types/study-types';
 
@@ -24,6 +25,13 @@ export default function StudyPlanView({ onGeneratePlan, isGeneratingPlan, nextSe
         router.push(`/study-session/${sessionId}?topic_ids=${topicIds.join(',')}`);
     };
 
+    const handleStartGuidedSession = () => {
+        if (!nextSessionData?.main_session?.id) return;
+        const sessionId = nextSessionData.main_session.id;
+        const resume = nextSessionData.main_session.guided_lesson_started;
+        router.push(`/guided-lesson/${sessionId}${resume ? '?resume=true' : ''}`);
+    };
+
     // --- RENDERIZAÇÃO CONDICIONAL DENTRO DO COMPONENTE ---
     
     // 1. Caso: O plano precisa ser gerado
@@ -40,6 +48,7 @@ export default function StudyPlanView({ onGeneratePlan, isGeneratingPlan, nextSe
     }
     
     const { main_session, review_session } = nextSessionData;
+    const guidedLessonStarted = main_session?.guided_lesson_started;
 
     // 2. Caso: O plano existe e está pronto
     return (
@@ -77,9 +86,17 @@ export default function StudyPlanView({ onGeneratePlan, isGeneratingPlan, nextSe
                 </div>
             )}
             
-            <Button onClick={handleStartSession} disabled={!main_session?.id} className="w-full py-3 text-lg bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-md shadow-lg">
-                Iniciar Sessão de Estudo
-            </Button>
+            <div className="flex flex-col sm:flex-row gap-4 mt-6">
+                <Button onClick={handleStartSession} disabled={!main_session?.id} className="flex-1 py-3 text-lg bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-md shadow-lg">
+                    Iniciar Sessão de Estudo
+                </Button>
+                <Button 
+                    onClick={handleStartGuidedSession} 
+                    disabled={!main_session?.id} 
+                    className={`flex-1 py-3 text-lg text-white font-bold rounded-md shadow-lg ${guidedLessonStarted ? 'bg-yellow-500 hover:bg-yellow-600' : 'bg-green-600 hover:bg-green-700'}`}>
+                    {guidedLessonStarted ? 'Continuar Sessão Guiada' : 'Iniciar Sessão de Estudo Guiada'}
+                </Button>
+            </div>
         </div>
     );
 }

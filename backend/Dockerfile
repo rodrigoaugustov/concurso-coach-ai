@@ -1,6 +1,6 @@
 # ---- Base Stage ----
 FROM python:3.11-slim as base
-# MUDANÇA: Usaremos /code como nosso diretório de trabalho padrão.
+# Usando /code como diretório de trabalho padrão
 WORKDIR /code
 
 # Instalar dependências do sistema
@@ -14,20 +14,24 @@ RUN pip install --no-cache-dir uv
 
 # ---- Builder Stage ----
 FROM base as builder
-COPY pyproject.toml .
-RUN uv pip install --system -e .
+COPY pyproject.toml uv.lock* ./
+# Instalar dependências em ambiente virtual
+RUN uv venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+RUN uv pip install -r pyproject.toml
 
 # ---- Final Stage ----
 FROM base as final
-COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
-COPY --from=builder /usr/local/bin /usr/local/bin
 
-# MUDANÇA: Copiamos nosso pacote 'app' para dentro do WORKDIR (/code).
-# A estrutura final será /code/app/main.py
+# Copiar ambiente virtual do builder
+COPY --from=builder /opt/venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Copiar código da aplicação
 COPY ./app ./app
 
+# Expor porta (Railway usará a variável PORT)
 EXPOSE 8000
 
-# MUDANÇA: O comando agora funciona perfeitamente, pois a partir de /code,
-# o Python consegue encontrar o pacote 'app'.
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Comando para produção - Railway definirá PORT automaticamente
+CMD uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}

@@ -92,11 +92,6 @@ def health_check():
     logger.debug("Health check requested")
     return {"status": "ok"}
 
-# Redireciona raiz para /dashboard
-@app.get("/")
-def root_redirect() -> Response:
-    return RedirectResponse(url="/dashboard", status_code=307)
-
 logger.info(
     "FastAPI application initialized successfully",
     environment=settings.ENVIRONMENT,

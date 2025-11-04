@@ -43,7 +43,13 @@ def start_guided_lesson(
         "messages": [{"role": "user", "content": initial_content}]
         }, context=ctx, config={"configurable": {"thread_id": f"guided_lesson_{session_id}"}})
     
-    initial_message = json.dumps(res["messages"][-1].content)
+    raw_content = res["messages"][-1].content
+    if isinstance(raw_content, list) and raw_content and 'text' in raw_content[0]:
+        content_to_save = raw_content[0]['text']
+    else:
+        content_to_save = raw_content
+
+    initial_message = json.dumps({"text": content_to_save})
 
     crud.add_message_to_history(
         db=db,
@@ -87,7 +93,13 @@ def handle_chat_message(
         config={"configurable": {"thread_id": f"guided_lesson_{session_id}"}}
     )
     
-    agent_response_content = json.dumps(res["messages"][-1].content)
+    raw_content = res["messages"][-1].content
+    if isinstance(raw_content, list) and raw_content and 'text' in raw_content[0]:
+        content_to_save = raw_content[0]['text']
+    else:
+        content_to_save = raw_content
+
+    agent_response_content = json.dumps({"text": content_to_save})
 
     # 4. Salvar resposta do agente
     crud.add_message_to_history(

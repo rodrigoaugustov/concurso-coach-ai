@@ -43,7 +43,13 @@ def start_guided_lesson(
         "messages": [{"role": "user", "content": initial_content}]
         }, context=ctx, config={"configurable": {"thread_id": f"guided_lesson_{session_id}"}})
     
-    initial_message = json.dumps(res["messages"][-1].content)
+    raw_content = res["messages"][-1].content
+    if isinstance(raw_content, list) and raw_content and 'text' in raw_content[0]:
+        content_to_save = raw_content[0]['text']
+    else:
+        content_to_save = raw_content
+
+    initial_message = json.dumps({"text": content_to_save})
 
     crud.add_message_to_history(
         db=db,
@@ -87,7 +93,13 @@ def handle_chat_message(
         config={"configurable": {"thread_id": f"guided_lesson_{session_id}"}}
     )
     
-    agent_response_content = json.dumps(res["messages"][-1].content)
+    raw_content = res["messages"][-1].content
+    if isinstance(raw_content, list) and raw_content and 'text' in raw_content[0]:
+        content_to_save = raw_content[0]['text']
+    else:
+        content_to_save = raw_content
+
+    agent_response_content = json.dumps({"text": content_to_save})
 
     # 4. Salvar resposta do agente
     crud.add_message_to_history(
@@ -101,3 +113,14 @@ def handle_chat_message(
     updated_history = crud.get_full_conversation_history(db, session_id=session_id)
     
     return {"agent_response": agent_response_content, "history": updated_history}
+
+@router.get("/{session_id}/history", response_model=list[schemas.MessageHistoryInDB])
+def get_chat_history(
+    session_id: int,
+    db: Session = Depends(get_db),
+    current_user: user_schemas.User = Depends(get_current_user),
+):
+    """Retorna o histórico de mensagens de uma sessão de aula guiada."""
+    # TODO: Add validation to ensure the user has access to this session
+    history = crud.get_full_conversation_history(db, session_id=session_id)
+    return history

@@ -8,6 +8,7 @@ Mantém a assinatura e políticas de retry na task; apenas delega a execução.
 import base64
 import json
 import time
+from datetime import date
 from typing import Dict, Any
 
 from sqlalchemy.orm import Session
@@ -23,6 +24,11 @@ from app.contests.prompts import edict_extraction_prompt, subject_refinement_pro
 
 logger = get_logger("contests.edict_processor")
 
+def json_serializer(obj):
+    """Serializador JSON para objetos não serializáveis por padrão."""
+    if isinstance(obj, date):
+        return obj.isoformat()
+    raise TypeError(f"Object of type {obj.__class__.__name__} is not JSON serializable")
 
 class EdictProcessor:
     def __init__(self, db: Session, contest_id: int):
@@ -81,15 +87,15 @@ class EdictProcessor:
             content_parts=content_parts, response_schema=EdictExtractionResponse
         )
         data = resp.dict()
+        print(data)
         log.info("Extraction completed", ms=round((time.time()-t0)*1000,2))
-        log.info("Extraction object", data)
         return data
 
     def _refine_data(self, initial: Dict[str, Any], log) -> Dict[str, Any]:
         t0 = time.time()
         refined = self.ai_service.generate_structured_output(
             prompt_template=subject_refinement_prompt,
-            prompt_input={"extracted_json": json.dumps(initial, indent=2, ensure_ascii=False)},
+            prompt_input={"extracted_json": json.dumps(initial, indent=2, ensure_ascii=False, default=json_serializer)},
             response_schema=EdictExtractionResponse,
         )
         data = refined.dict()

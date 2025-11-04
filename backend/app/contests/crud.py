@@ -1,11 +1,12 @@
 from sqlalchemy.orm import Session
 from . import models
 
-def create_contest(db: Session, name: str, file_url: str, file_hash: str) -> models.PublishedContest:
+def create_contest(db: Session, name: str, file_hash: str, file_content: bytes, file_url: str = None) -> models.PublishedContest:
     db_contest = models.PublishedContest(
         name=name,
         file_url=file_url,
         file_hash=file_hash,
+        file_content=file_content,
         status=models.ContestStatus.PENDING
     )
     db.add(db_contest)

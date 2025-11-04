@@ -1,5 +1,5 @@
 import enum
-from sqlalchemy import Column, Integer, String, Float, ForeignKey, Enum as SQLAlchemyEnum, Date
+from sqlalchemy import Column, Integer, String, Float, ForeignKey, Enum as SQLAlchemyEnum, Date, LargeBinary
 from sqlalchemy.orm import relationship
 from app.core.database import Base
 
@@ -16,9 +16,10 @@ class PublishedContest(Base):
     name = Column(String, index=True)
     exam_date = Column(Date, nullable=True)
     status = Column(SQLAlchemyEnum(ContestStatus), nullable=False, default=ContestStatus.PENDING)
-    file_url = Column(String, nullable=False)
+    file_url = Column(String, nullable=True)
     file_hash = Column(String, unique=True, index=True)
     error_message = Column(String, nullable=True)
+    file_content = Column(LargeBinary, nullable=True)
     
     # RELACIONAMENTO: Um concurso tem muitos cargos
     roles = relationship("ContestRole", back_populates="contest", cascade="all, delete-orphan")

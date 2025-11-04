@@ -1,13 +1,10 @@
-import uuid
 import hashlib
 from typing import Annotated, List
 
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, status, Request
-from google.cloud import storage
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.settings import settings
 from app.users.auth import get_current_user
 from app.users import schemas as user_schemas
 from . import crud
@@ -56,7 +53,7 @@ def upload_contest_edict(
 ):
     """
     Upload seguro de PDF de edital com validação por magic bytes, tamanho e sanitização de filename.
-    Evita duplicatas por hash de conteúdo e publica no GCS com content_type forçado para application/pdf.
+    Evita duplicatas por hash de conteúdo e salva o arquivo no banco de dados.
     """
     try:
         # 1) Validação completa do arquivo
@@ -67,24 +64,15 @@ def upload_contest_edict(
         if existing_contest:
             return existing_contest
 
-        # 2) Upload seguro ao GCS
-        storage_client = storage.Client(project=settings.GCP_PROJECT_ID)
-        bucket = storage_client.bucket(settings.GCS_BUCKET_NAME)
-
+        # 2) Sanitização do nome do arquivo
         safe_original = InputValidator.sanitize_filename(file.filename or "edital.pdf")
-        blob_name = f"edicts/{uuid.uuid4()}_{safe_original}"
-        blob = bucket.blob(blob_name)
-
-        # Reenvia do buffer validado
-        from io import BytesIO
-        blob.upload_from_file(BytesIO(contents), content_type="application/pdf")
 
         # 3) Persistir e disparar processamento
         db_contest = crud.create_contest(
             db=db,
             name=safe_original,
-            file_url=blob.public_url,
             file_hash=file_hash,
+            file_content=contents,
         )
 
         process_edict_task.delay(db_contest.id)

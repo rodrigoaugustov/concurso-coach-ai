@@ -10,7 +10,6 @@ import json
 import time
 from typing import Dict, Any
 
-from google.cloud import storage
 from sqlalchemy.orm import Session
 
 from app.core.settings import settings
@@ -36,7 +35,7 @@ class EdictProcessor:
         with LogContext(processor="edict", contest_id=self.contest_id) as log:
             try:
                 self._setup(log)
-                pdf_b64 = self._download_pdf(log)
+                pdf_b64 = self._get_pdf_from_db(log)
                 initial = self._extract_data(pdf_b64, log)
                 refined = self._refine_data(initial, log)
                 self._validate_data(initial, refined, log)
@@ -62,14 +61,14 @@ class EdictProcessor:
         )
         log.info("Setup completed", status=self.contest.status.value)
 
-    def _download_pdf(self, log) -> str:
+    def _get_pdf_from_db(self, log) -> str:
         t0 = time.time()
-        storage_client = storage.Client(project=settings.GCP_PROJECT_ID)
-        bucket = storage_client.bucket(settings.GCS_BUCKET_NAME)
-        blob_name = self.contest.file_url.replace(f"https://storage.googleapis.com/{settings.GCS_BUCKET_NAME}/", "")
-        pdf_content = bucket.blob(blob_name).download_as_bytes()
+        if not self.contest.file_content:
+            raise ValueError("Conteúdo do arquivo não encontrado no banco de dados.")
+        
+        pdf_content = self.contest.file_content
         pdf_base64 = base64.b64encode(pdf_content).decode("utf-8")
-        log.info("PDF downloaded", ms=round((time.time()-t0)*1000,2), size_mb=round(len(pdf_content)/(1024*1024),2))
+        log.info("PDF loaded from DB", ms=round((time.time()-t0)*1000,2), size_mb=round(len(pdf_content)/(1024*1024),2))
         return pdf_base64
 
     def _extract_data(self, pdf_b64: str, log) -> Dict[str, Any]:

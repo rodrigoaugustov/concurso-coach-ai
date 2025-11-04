@@ -52,7 +52,7 @@ def login_for_access_token(
     return {"access_token": access_token, "token_type": "bearer"}
 
 
-@router.post("/", response_model=schemas.User, status_code=status.HTTP_201_CREATED, summary="Create a new user")
+@router.post("/register", response_model=schemas.User, status_code=status.HTTP_201_CREATED, summary="Create a new user")
 def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
     # Sanitização básica
     if not InputValidator.validate_email(user.email):
